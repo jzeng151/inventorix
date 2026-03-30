@@ -1,0 +1,43 @@
+# Rust / Cargo
+target/
+Cargo.lock
+
+# Private files
+*.xlsx
+
+# Environment — never commit secrets
+.env
+
+# SQLite databases and backups
+*.db
+*.db-shm
+*.db-wal
+backups/
+
+# Chat logs (written to network drive; local placeholder dir)
+chat-logs-placeholder/
+
+# Tauri build artifacts
+src-tauri/target/
+src-tauri/gen/
+
+# Windows installer artifacts
+*.msi
+*.exe
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test fixtures — real Excel files (checked in manually)
+# tests/fixtures/*.xlsx are committed intentionally; exclude nothing here
+
+# Logs
+*.log

@@ -91,6 +91,15 @@ Items deferred from the CEO review (2026-03-29) or flagged as required pre-work.
 
 ---
 
+### Network drive path for chat logs — confirm with IT
+**What:** Replace the placeholder `CHAT_LOG_PATH` env var in `.env.example` with the actual UNC path or mapped drive for the NYC branch network share.
+**Why:** Chat logs are written to one file per day (e.g. `2026-03-30.log`) on a network drive, not in SQLite. The implementation uses a placeholder path; IT needs to provide the real path before pilot launch.
+**Action:** IT provides the network share path → update `.env.example` and deployment docs.
+**Effort:** XS (once IT confirms path)
+**Priority:** P2 — before pilot launch
+
+---
+
 ### Rate limiting on login endpoint
 **What:** Add rate limiting to `POST /auth/login` (max 5 failed attempts per IP per minute).
 **Why:** Current security review flagged this as the only unmitigated brute-force vector. The app runs on LAN, reducing risk, but the correct behavior is still to rate-limit.
