@@ -74,12 +74,37 @@ pub async fn login(
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
 
+    // Track session_id → user_id for admin deactivation
+    if let Some(sid) = session.id() {
+        let sid_str = sid.to_string();
+        sqlx::query!(
+            "INSERT OR REPLACE INTO user_sessions (session_id, user_id) VALUES (?, ?)",
+            sid_str, user.id
+        )
+        .execute(&state.db)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!("Failed to track session: {e}");
+            Default::default()
+        });
+    }
+
     Ok(Redirect::to("/").into_response())
 }
 
 // ── POST /auth/logout ─────────────────────────────────────────────────────────
 
-pub async fn logout(session: Session) -> Result<impl IntoResponse, AppError> {
+pub async fn logout(
+    State(state): State<AppState>,
+    session: Session,
+) -> Result<impl IntoResponse, AppError> {
+    if let Some(sid) = session.id() {
+        let sid_str = sid.to_string();
+        sqlx::query!("DELETE FROM user_sessions WHERE session_id = ?", sid_str)
+            .execute(&state.db)
+            .await
+            .ok();
+    }
     session
         .flush()
         .await

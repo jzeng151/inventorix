@@ -38,7 +38,7 @@ pub async fn build_router(state: AppState) -> Router {
         .merge(import::router())
         .merge(export::router())
         .merge(refill::router())
-        // TODO (Admin):  .merge(admin::router())
+        .merge(admin::router())
         // Static assets (CSS, HTMX)
         .nest_service("/static", ServeDir::new("static"))
         .layer(session_layer)

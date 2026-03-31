@@ -21,6 +21,9 @@
         <span class="topbar__role">· {{ auth_user_role }}</span>
       {% endif %}
     </span>
+    {% if auth_user_role == "admin" %}
+    <a href="/admin" class="btn btn--ghost">Admin</a>
+    {% endif %}
     <form action="/auth/logout" method="post" style="display:inline">
       <button type="submit" class="btn btn--ghost">Logout</button>
     </form>

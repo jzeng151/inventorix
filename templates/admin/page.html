@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Admin — Inventorix{% endblock %}
+
+{% block content %}
+<div class="admin-page">
+
+  <h1 class="admin-title">User Management</h1>
+
+  <div class="admin-columns">
+
+    <!-- Left: user list -->
+    <section class="admin-users" aria-label="User list">
+      <h2 class="detail-section-heading">Users</h2>
+
+      {% if users | length == 0 %}
+      <p class="detail-empty-sub">No users yet.</p>
+      {% else %}
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Role</th>
+            <th>Branch</th>
+            <th>Since</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+          <tr class="{% if not u.is_active %}admin-row--inactive{% endif %}">
+            <td>{{ u.name }}</td>
+            <td class="admin-email">{{ u.email }}</td>
+            <td>
+              <span class="role-badge role-badge--{{ u.role }}">
+                {% if u.role == "admin" %}Admin
+                {% elif u.role == "coordinator" %}Coordinator
+                {% else %}Sales Rep{% endif %}
+              </span>
+            </td>
+            <td>{{ u.branch_name }}</td>
+            <td class="admin-date">{{ u.created_at | truncate(length=10, end="") }}</td>
+            <td>
+              {% if u.is_active %}
+              <span class="status-badge status-badge--active">Active</span>
+              {% else %}
+              <span class="status-badge status-badge--inactive">Inactive</span>
+              {% endif %}
+            </td>
+            <td class="admin-actions">
+              {% if u.is_active %}
+              <form method="post" action="/admin/users/{{ u.id }}/deactivate"
+                    onsubmit="return confirm('Deactivate {{ u.name }}? Their session will end immediately.')">
+                <button type="submit" class="btn btn--sm btn--danger-outline">Deactivate</button>
+              </form>
+              {% else %}
+              <form method="post" action="/admin/users/{{ u.id }}/reactivate">
+                <button type="submit" class="btn btn--sm btn--secondary">Reactivate</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+    </section>
+
+    <!-- Right: create user form -->
+    <section class="admin-create" aria-label="Create user">
+      <h2 class="detail-section-heading">Add User</h2>
+
+      <form method="post" action="/admin/users" class="admin-form">
+
+        <div class="form-group">
+          <label class="form-label" for="u-name">Full Name</label>
+          <input id="u-name" name="name" type="text" class="form-input"
+                 placeholder="Jane Smith" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="u-email">Email</label>
+          <input id="u-email" name="email" type="email" class="form-input"
+                 placeholder="jane@example.com" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="u-password">Password</label>
+          <input id="u-password" name="password" type="password" class="form-input"
+                 placeholder="Temporary password" required minlength="8">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="u-role">Role</label>
+          <select id="u-role" name="role" class="form-input" required>
+            <option value="">— select —</option>
+            <option value="coordinator">Sample Coordinator</option>
+            <option value="sales_rep">Sales Rep</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label" for="u-branch">Branch</label>
+          <select id="u-branch" name="branch_id" class="form-input" required>
+            <option value="">— select —</option>
+            {% for b in branches %}
+            <option value="{{ b.id }}">{{ b.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <button type="submit" class="btn btn--primary" style="width:100%;margin-top:var(--space-2)">
+          Create User
+        </button>
+
+      </form>
+    </section>
+
+  </div>
+</div>
+{% endblock %}
