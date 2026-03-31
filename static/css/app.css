@@ -408,23 +408,62 @@ table.inventory td {
 }
 
 .health-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   background: none;
-  border: none;
+  border: 1px solid transparent;
   cursor: pointer;
   font-family: inherit;
   font-size: 14px;
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-sm);
-  transition: background 0.1s;
+  transition: background 0.1s, border-color 0.1s;
 }
 
-.health-chip--critical       { color: var(--color-critical-fg); }
-.health-chip--critical.active{ background: var(--color-critical-bg); }
-.health-chip--low            { color: var(--color-low-fg); }
-.health-chip--low.active     { background: var(--color-low-bg); }
-.health-chip--healthy        { color: var(--color-healthy-fg); }
-.health-chip--healthy.active { background: var(--color-healthy-bg); }
-.js-filter-clear             { color: var(--color-text-muted); font-size: 12px; }
+/* Checkbox indicator — unchecked by default */
+.health-chip__check {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  border: 1.5px solid currentColor;
+  border-radius: 3px;
+  flex-shrink: 0;
+  position: relative;
+  opacity: 0.5;
+  transition: opacity 0.1s, background 0.1s;
+}
+
+/* Tick mark — hidden until active */
+.health-chip__check::after {
+  content: '';
+  display: none;
+  position: absolute;
+  left: 2px;
+  top: 0px;
+  width: 5px;
+  height: 8px;
+  border: 2px solid #fff;
+  border-top: none;
+  border-left: none;
+  transform: rotate(45deg);
+}
+
+.health-chip.active .health-chip__check {
+  opacity: 1;
+  background: currentColor;
+}
+.health-chip.active .health-chip__check::after {
+  display: block;
+}
+
+.health-chip--critical                { color: var(--color-critical-fg); }
+.health-chip--critical.active         { background: var(--color-critical-bg); border-color: var(--color-critical-fg); }
+.health-chip--low                     { color: var(--color-low-fg); }
+.health-chip--low.active              { background: var(--color-low-bg); border-color: var(--color-low-fg); }
+.health-chip--healthy                 { color: var(--color-healthy-fg); }
+.health-chip--healthy.active          { background: var(--color-healthy-bg); border-color: var(--color-healthy-fg); }
+.js-filter-clear                      { color: var(--color-text-muted); font-size: 12px; border: none; }
 
 /* ── Refill status badges ─────────────────────────────────────────────────────── */
 .btn--amber-fill {
@@ -671,6 +710,78 @@ table.inventory td {
   color: var(--color-low-fg);
   margin-top: var(--space-1);
 }
+
+/* ── Import / form pages ─────────────────────────────────────────────────────── */
+.form-page {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: var(--space-8) var(--space-4);
+}
+
+.form-page__title {
+  font-size: 22px;
+  font-weight: 600;
+  margin: var(--space-4) 0 var(--space-2);
+  color: var(--color-text-primary);
+}
+
+.import-form { margin-top: var(--space-6); }
+
+.import-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  border: 2px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-8);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  text-align: center;
+}
+.import-dropzone:hover { border-color: var(--color-accent); background: #EFF6FF; }
+.import-dropzone input[type=file] { display: none; }
+.import-dropzone__icon { font-size: 32px; }
+.import-dropzone__text { font-size: 14px; color: var(--color-text-muted); }
+
+.import-actions {
+  display: flex;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.import-summary {
+  display: flex;
+  gap: var(--space-4);
+  margin: var(--space-6) 0;
+}
+
+.import-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4) var(--space-6);
+  min-width: 100px;
+}
+.import-stat--ok   { border-color: var(--color-healthy-fg); }
+.import-stat--warn { border-color: var(--color-low-fg); }
+.import-stat__num  { font-size: 28px; font-weight: 600; color: var(--color-text-primary); }
+.import-stat__label{ font-size: 12px; color: var(--color-text-muted); }
+
+.import-errors {
+  background: var(--color-low-bg);
+  border: 1px solid var(--color-low-fg);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  font-size: 13px;
+}
+.import-errors summary { cursor: pointer; font-weight: 600; color: var(--color-low-fg); }
+.import-errors__list { margin: var(--space-2) 0 0 var(--space-4); }
+.import-errors__list li { margin-bottom: var(--space-1); }
 
 /* ── Mobile ─────────────────────────────────────────────────────────────────── */
 @media (max-width: 768px) {

@@ -10,7 +10,9 @@
   <input id="search-notes"      type="search" class="form-input subbar__search" placeholder="Notes">
   <div class="subbar__spacer"></div>
   <a href="/import" class="btn btn--secondary">Import</a>
-  <a href="/export" class="btn btn--secondary">Export End-of-Day</a>
+  <form method="post" action="/export" style="display:inline">
+    <button type="submit" class="btn btn--secondary">Export End-of-Day</button>
+  </form>
 </div>
 {% endblock %}
 
@@ -18,16 +20,16 @@
 
 <!-- Health summary strip -->
 <div class="health-strip" role="toolbar" aria-label="Filter by health status">
-  <button class="health-chip health-chip--critical js-filter" data-filter="critical">
-    {{ stats.critical }} critical
+  <button class="health-chip health-chip--critical js-filter" data-filter="critical" aria-pressed="false">
+    <span class="health-chip__check" aria-hidden="true"></span>{{ stats.critical }} critical
   </button>
   ·
-  <button class="health-chip health-chip--low js-filter" data-filter="low">
-    {{ stats.low }} low
+  <button class="health-chip health-chip--low js-filter" data-filter="low" aria-pressed="false">
+    <span class="health-chip__check" aria-hidden="true"></span>{{ stats.low }} low
   </button>
   ·
-  <button class="health-chip health-chip--healthy js-filter" data-filter="healthy">
-    {{ stats.healthy }} healthy
+  <button class="health-chip health-chip--healthy js-filter" data-filter="healthy" aria-pressed="false">
+    <span class="health-chip__check" aria-hidden="true"></span>{{ stats.healthy }} healthy
   </button>
   <button class="health-chip js-filter-clear" style="display:none">× clear filter</button>
 </div>
@@ -79,7 +81,7 @@
     notes:      { input: document.getElementById('search-notes'),      index: 7 },
   };
 
-  let activeHealthFilter = null;
+  const activeHealthFilters = new Set();
 
   function applyFilters() {
     const terms = Object.values(cols).map(c => c.input.value.toLowerCase().trim());
@@ -90,7 +92,8 @@
         if (!terms[i]) return true;
         return (cells[c.index]?.textContent ?? '').toLowerCase().includes(terms[i]);
       });
-      const healthMatch = !activeHealthFilter || row.classList.contains('row--' + activeHealthFilter);
+      const healthMatch = activeHealthFilters.size === 0 ||
+        [...activeHealthFilters].some(f => row.classList.contains('row--' + f));
       row.style.display = textMatch && healthMatch ? '' : 'none';
     });
   }
@@ -98,26 +101,28 @@
   Object.values(cols).forEach(c => c.input.addEventListener('input', applyFilters));
 
   // ── Health chip filter ────────────────────────────────────────────────────
+  function syncChipUI() {
+    document.querySelectorAll('.js-filter').forEach(b => {
+      const on = activeHealthFilters.has(b.dataset.filter);
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    document.querySelector('.js-filter-clear').style.display =
+      activeHealthFilters.size > 0 ? '' : 'none';
+  }
+
   document.querySelectorAll('.js-filter').forEach(btn => {
     btn.addEventListener('click', () => {
       const f = btn.dataset.filter;
-      if (activeHealthFilter === f) {
-        activeHealthFilter = null;
-        document.querySelectorAll('.js-filter').forEach(b => b.classList.remove('active'));
-        document.querySelector('.js-filter-clear').style.display = 'none';
-      } else {
-        activeHealthFilter = f;
-        document.querySelectorAll('.js-filter').forEach(b => b.classList.toggle('active', b.dataset.filter === f));
-        document.querySelector('.js-filter-clear').style.display = '';
-      }
+      activeHealthFilters.has(f) ? activeHealthFilters.delete(f) : activeHealthFilters.add(f);
+      syncChipUI();
       applyFilters();
     });
   });
 
   document.querySelector('.js-filter-clear')?.addEventListener('click', () => {
-    activeHealthFilter = null;
-    document.querySelectorAll('.js-filter').forEach(b => b.classList.remove('active'));
-    document.querySelector('.js-filter-clear').style.display = 'none';
+    activeHealthFilters.clear();
+    syncChipUI();
     applyFilters();
   });
 

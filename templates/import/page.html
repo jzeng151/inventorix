@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Import — Inventorix{% endblock %}
+
+{% block content %}
+<div class="form-page">
+  <a href="/" class="detail-back">← Back to inventory</a>
+  <h1 class="form-page__title">Import Excel Sheet</h1>
+  <p class="detail-empty-sub">
+    Upload the branch Excel file (.xlsx). All tiles will be upserted — existing
+    records are updated, new ones are created. Tiles not in the file are left unchanged.
+  </p>
+
+  <form class="import-form"
+        method="post"
+        action="/import"
+        enctype="multipart/form-data">
+    <label class="import-dropzone" id="dropzone">
+      <input type="file" name="file" id="file-input" accept=".xlsx" required>
+      <span class="import-dropzone__icon" aria-hidden="true">📂</span>
+      <span class="import-dropzone__text" id="dropzone-label">
+        Drop .xlsx here or <u>click to browse</u>
+      </span>
+    </label>
+
+    <div class="import-actions">
+      <button type="submit" class="btn btn--primary" id="import-btn">Import</button>
+      <a href="/" class="btn btn--ghost">Cancel</a>
+    </div>
+  </form>
+</div>
+
+<script>
+  const input = document.getElementById('file-input');
+  const label = document.getElementById('dropzone-label');
+  const btn   = document.getElementById('import-btn');
+
+  input.addEventListener('change', function () {
+    label.textContent = this.files[0]?.name ?? 'No file selected';
+  });
+
+  document.getElementById('import-btn').closest('form')
+    .addEventListener('submit', function () {
+      btn.disabled = true;
+      btn.textContent = 'Importing…';
+    });
+</script>
+{% endblock %}

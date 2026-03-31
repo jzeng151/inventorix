@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Import Complete — Inventorix{% endblock %}
+
+{% block content %}
+<div class="form-page">
+  <h1 class="form-page__title">Import Complete</h1>
+
+  <div class="import-summary">
+    <div class="import-stat import-stat--ok">
+      <span class="import-stat__num">{{ result.upserted }}</span>
+      <span class="import-stat__label">tiles imported</span>
+    </div>
+    <div class="import-stat import-stat--muted">
+      <span class="import-stat__num">{{ result.skipped }}</span>
+      <span class="import-stat__label">rows skipped</span>
+    </div>
+    {% if result.errors | length > 0 %}
+    <div class="import-stat import-stat--warn">
+      <span class="import-stat__num">{{ result.errors | length }}</span>
+      <span class="import-stat__label">warnings</span>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if result.errors | length > 0 %}
+  <details class="import-errors">
+    <summary>{{ result.errors | length }} warning(s) — click to expand</summary>
+    <ul class="import-errors__list">
+      {% for err in result.errors %}
+      <li>{{ err }}</li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+
+  <div class="import-actions" style="margin-top: var(--space-6)">
+    <a href="/" class="btn btn--primary">View Inventory</a>
+    <a href="/import" class="btn btn--secondary">Import Another</a>
+  </div>
+</div>
+{% endblock %}

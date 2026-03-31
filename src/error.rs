@@ -34,10 +34,15 @@ pub enum AppError {
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
+        // Unauthenticated browser requests get a redirect rather than a JSON 401
+        if matches!(self, AppError::Unauthorized) {
+            return axum::response::Redirect::to("/login").into_response();
+        }
+
         let (status, message) = match &self {
             AppError::NotFound => (StatusCode::NOT_FOUND, self.to_string()),
             AppError::Forbidden => (StatusCode::FORBIDDEN, self.to_string()),
-            AppError::Unauthorized => (StatusCode::UNAUTHORIZED, self.to_string()),
+            AppError::Unauthorized => unreachable!(),
             AppError::Conflict(msg) => (StatusCode::CONFLICT, msg.clone()),
             AppError::ValidationError(msg) => (StatusCode::UNPROCESSABLE_ENTITY, msg.clone()),
             AppError::Template(e) => {

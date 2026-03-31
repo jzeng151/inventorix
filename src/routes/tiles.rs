@@ -17,8 +17,8 @@ use crate::{
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/", get(inventory_table))
-        .route("/tiles/:id", get(tile_detail))
-        .route("/tiles/:id", put(update_tile))
+        .route("/tiles/{id}", get(tile_detail))
+        .route("/tiles/{id}", put(update_tile))
 }
 
 // ── DB row types (returned by sqlx) ──────────────────────────────────────────

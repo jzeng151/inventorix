@@ -21,41 +21,41 @@ Decisions and setup required before development starts. Not features — prerequ
 **Definition of done:** A coordinator can import the NYC Excel sheet, track inventory live, chat with sales reps per tile, create and approve refill requests (with Salesforce notification), and export an end-of-day digest. All of this runs as a Windows desktop app on a single machine.
 
 ### Day 1 — Foundations (Lane A)
-- [ ] Rust workspace setup (Axum + Tauri + SQLx + Tera + HTMX)
-- [ ] sqlx-cli migrations: all 6 tables in one migration file (`20260330_initial.sql`)
-- [ ] SQLite WAL mode + `busy_timeout = 5000ms` in connection options
-- [ ] `idx_refill_timer` index on `refill_requests(status, timer_expires_at)`
-- [ ] `AppState`: `SqlitePool`, `Arc<Mutex<bool>>` import lock, `Arc<ConnectionManager>`
-- [ ] `AuthUser` extractor (`FromRequestParts`) — compiler-enforced branch isolation
-- [ ] `AppError` enum (thiserror) implementing `IntoResponse`
-- [ ] Session middleware (tower-sessions + SQLite session store)
-- [ ] `DESIGN.md` and `CONTRIBUTING.md` created (dev workflow: Axum standalone mode for template iteration)
-- [ ] Tauri IPC stubs: `pick_excel_file` (hardcoded path), `open_digest_in_browser` (no-op) — **blocks Lane D**
+- [x] Rust workspace setup (Axum + Tauri + SQLx + Tera + HTMX)
+- [x] sqlx-cli migrations: all 6 tables in one migration file (`20260330_initial.sql`)
+- [x] SQLite WAL mode + `busy_timeout = 5000ms` in connection options
+- [x] `idx_refill_timer` index on `refill_requests(status, timer_expires_at)`
+- [x] `AppState`: `SqlitePool`, `Arc<Mutex<bool>>` import lock, `Arc<ConnectionManager>`
+- [x] `AuthUser` extractor (`FromRequestParts`) — compiler-enforced branch isolation
+- [x] `AppError` enum (thiserror) implementing `IntoResponse`
+- [x] Session middleware (tower-sessions + SQLite session store)
+- [x] `DESIGN.md` and `CONTRIBUTING.md` created (dev workflow: Axum standalone mode for template iteration)
+- [x] Tauri IPC stubs: `pick_excel_file` (hardcoded path), `open_digest_in_browser` (no-op) — **blocks Lane D**
 
 ### Days 2-5 — Feature Lanes (parallel)
 
 **Lane A: Axum Foundation**
-- [ ] Login / logout routes and Tera templates
+- [x] Login / logout routes and Tera templates
 - [ ] `/health` endpoint (DB connectivity, last timer run, active WS connections)
-- [ ] Background job: `check_expired_timers` (tokio::spawn loop, every 5 minutes)
+- [x] Background job: `check_expired_timers` (tokio::spawn loop, every 5 minutes)
 - [ ] Background job: daily SQLite backup to `backups/` directory
 
 **Lane B: Inventory UI**
-- [ ] `GET /` — inventory table, branch-scoped, sorted by health (red → amber → green)
-- [ ] Health summary strip: "12 critical · 34 low · 654 healthy" (clickable filters)
-- [ ] Search/filter: item number, collection, bin, notes (auto-focused on load)
-- [ ] Color-coded rows (CSS row tint + qty badge with color dot)
-- [ ] Role-aware column rendering (Refill button hidden for Sales Rep, Approve hidden for Coordinator)
-- [ ] `GET /tiles/:id` — tile detail: two-column layout (60% fields + 40% chat)
-- [ ] HTMX partial: row swap on qty update (WebSocket-triggered)
-- [ ] WebSocket disconnect banner ("Real-time updates paused — reconnecting...")
+- [x] `GET /` — inventory table, branch-scoped, sorted by health (red → amber → green)
+- [x] Health summary strip: "12 critical · 34 low · 654 healthy" (clickable filters, multi-select)
+- [x] Search/filter: item number, collection, bin, notes (auto-focused on load)
+- [x] Color-coded rows (CSS row tint + qty badge with color dot)
+- [x] Role-aware column rendering (Refill button hidden for Sales Rep, Approve hidden for Coordinator)
+- [x] `GET /tiles/:id` — tile detail: two-column layout (60% fields + 40% chat)
+- [x] HTMX partial: row swap on qty update (WebSocket-triggered)
+- [x] WebSocket disconnect banner ("Real-time updates paused — reconnecting...")
 
 **Lane C: WebSocket + Real-time**
-- [ ] `ConnectionManager`: `DashMap<branch_id, Vec<Sender<WsEvent>>>`
-- [ ] `GET /ws/:branch_id` — WebSocket upgrade handler
-- [ ] Event types: `ChatMessage`, `InventoryUpdate`, `RefillStatusChange`
-- [ ] Broadcast on every inventory mutation
-- [ ] Dead connection cleanup on disconnect (no panic on closed sender)
+- [x] `ConnectionManager`: `DashMap<branch_id, Vec<Sender<WsEvent>>>`
+- [x] `GET /ws` — WebSocket upgrade handler, branch-scoped via session
+- [x] Event types: `ChatMessage`, `InventoryUpdate`, `RefillStatusChange`
+- [x] Broadcast on every inventory mutation
+- [x] Dead connection cleanup on disconnect (no panic on closed sender)
 
 **Lane D: Excel Import + Export**
 - [ ] `POST /import` — calamine reads .xlsx, upserts tiles in a single transaction
