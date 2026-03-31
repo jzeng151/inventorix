@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Inventorix{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+  <script src="/static/js/htmx.min.js" defer></script>
+</head>
+<body>
+
+  <!-- Top Bar -->
+  <header class="topbar" role="banner">
+    <span class="topbar__logo">INVENTORIX</span>
+    <span class="topbar__branch">{{ branch_name | default(value="—") }}</span>
+    <div class="topbar__spacer"></div>
+    <span class="topbar__user">
+      {{ auth_user_name | default(value="") }}
+      {% if auth_user_role %}
+        <span class="topbar__role">· {{ auth_user_role }}</span>
+      {% endif %}
+    </span>
+    <form action="/auth/logout" method="post" style="display:inline">
+      <button type="submit" class="btn btn--ghost">Logout</button>
+    </form>
+  </header>
+
+  <!-- Sub-bar slot (inventory page only) -->
+  {% block subbar %}{% endblock %}
+
+  <!-- Main content -->
+  <main class="main" role="main">
+    {% block content %}{% endblock %}
+  </main>
+
+</body>
+</html>

@@ -1,7 +1,9 @@
 use axum::{routing::get, Json, Router};
 use serde_json::json;
 
-pub fn router() -> Router {
+/// Generic over S so this router merges into any typed Router<S>.
+/// health_check doesn't use app state, so it's compatible with any state.
+pub fn router<S: Clone + Send + Sync + 'static>() -> Router<S> {
     Router::new().route("/health", get(health_check))
 }
 

@@ -20,7 +20,7 @@ path = "src/main.rs"
 tokio = { version = "1", features = ["full"] }
 
 # Web framework
-axum = { version = "0.7", features = ["ws", "macros", "multipart", "form"] }
+axum = { version = "0.8", features = ["ws", "macros", "multipart", "form"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["fs", "trace"] }
 
@@ -37,8 +37,8 @@ sqlx = { version = "0.8", features = [
 tera = "1"
 
 # Sessions
-tower-sessions = "0.13"
-tower-sessions-sqlx-store = { version = "0.13", features = ["sqlite"] }
+tower-sessions = "0.14"
+tower-sessions-sqlx-store = { version = "0.15", features = ["sqlite"] }
 
 # Password hashing
 argon2 = "0.5"
@@ -56,6 +56,7 @@ dashmap = "6"
 
 # Error handling
 thiserror = "2"
+anyhow = "1"
 
 # Logging
 tracing = "0.1"
@@ -72,4 +73,4 @@ rand = "0.8"
 async-trait = "0.1"
 
 [dev-dependencies]
-axum-test = "15"
+axum-test = "16"

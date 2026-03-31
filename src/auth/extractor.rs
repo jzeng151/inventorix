@@ -1,14 +1,8 @@
-// Lane A (Day 1): AuthUser extractor — compiler-enforced branch isolation.
-// Every protected handler must accept `AuthUser` or it won't compile.
-// branch_id comes from the session only — never from request body or URL params.
+use axum::extract::{FromRef, FromRequestParts, State};
+use axum::http::request::Parts;
+use tower_sessions::Session;
 
-use axum::{
-    async_trait,
-    extract::FromRequestParts,
-    http::request::Parts,
-};
-
-use crate::AppError;
+use crate::{models::user::User, AppError, AppState};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Role {
@@ -36,21 +30,74 @@ impl Role {
     }
 }
 
+/// Authenticated user, extracted from the session on every protected request.
+/// `branch_id` comes from the session/DB only — never from the request body or URL params.
+/// If this extractor is missing from a handler signature, the handler won't compile,
+/// making branch isolation a compiler-enforced guarantee.
 #[derive(Debug, Clone)]
 pub struct AuthUser {
     pub id: i64,
     pub role: Role,
     pub branch_id: i64,
+    pub name: String,
 }
 
-#[async_trait]
-impl<S: Send + Sync> FromRequestParts<S> for AuthUser {
+impl AuthUser {
+    pub fn is_admin(&self) -> bool {
+        self.role == Role::Admin
+    }
+    pub fn is_coordinator(&self) -> bool {
+        self.role == Role::Coordinator
+    }
+    pub fn is_sales_rep(&self) -> bool {
+        self.role == Role::SalesRep
+    }
+}
+
+impl<S> FromRequestParts<S> for AuthUser
+where
+    S: Send + Sync,
+    AppState: FromRef<S>,
+{
     type Rejection = AppError;
 
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        // TODO (Lane A): extract session, look up user in DB, return AuthUser
-        // For now, return Unauthorized so the type system is satisfied
-        let _ = parts;
-        Err(AppError::Unauthorized)
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        // 1. Extract session (populated by SessionManagerLayer)
+        let session = Session::from_request_parts(parts, state)
+            .await
+            .map_err(|_| AppError::Unauthorized)?;
+
+        // 2. Get user_id from session data
+        let user_id: i64 = session
+            .get::<i64>("user_id")
+            .await
+            .map_err(|_| AppError::Unauthorized)?
+            .ok_or(AppError::Unauthorized)?;
+
+        // 3. Load AppState to query the DB
+        let State(app_state) = State::<AppState>::from_request_parts(parts, state)
+            .await
+            .map_err(|_| AppError::Internal("app state missing".into()))?;
+
+        // 4. Fetch the user — must be active, must exist
+        let user = sqlx::query_as!(
+            User,
+            "SELECT * FROM users WHERE id = ? AND is_active = 1",
+            user_id
+        )
+        .fetch_optional(&app_state.db)
+        .await
+        .map_err(AppError::Database)?
+        .ok_or(AppError::Unauthorized)?;
+
+        // 5. Parse role string — unknown roles are rejected
+        let role = Role::from_str(&user.role).ok_or(AppError::Unauthorized)?;
+
+        Ok(AuthUser {
+            id: user.id,
+            role,
+            branch_id: user.branch_id,
+            name: user.name,
+        })
     }
 }

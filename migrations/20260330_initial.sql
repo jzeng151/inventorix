@@ -2,14 +2,14 @@
 -- Apply with: sqlx migrate run
 
 CREATE TABLE branches (
-  id         INTEGER PRIMARY KEY,
+  id         INTEGER PRIMARY KEY NOT NULL,
   name       TEXT NOT NULL,
   territory  TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE TABLE users (
-  id            INTEGER PRIMARY KEY,
+  id            INTEGER PRIMARY KEY NOT NULL,
   branch_id     INTEGER NOT NULL REFERENCES branches(id),
   name          TEXT NOT NULL,
   role          TEXT NOT NULL CHECK(role IN ('admin', 'coordinator', 'sales_rep')),
@@ -21,7 +21,7 @@ CREATE TABLE users (
 );
 
 CREATE TABLE tiles (
-  id                      INTEGER PRIMARY KEY,
+  id                      INTEGER PRIMARY KEY NOT NULL,
   branch_id               INTEGER NOT NULL REFERENCES branches(id),
   item_number             TEXT NOT NULL,
   collection              TEXT,
@@ -44,7 +44,7 @@ CREATE TABLE tiles (
 -- on the network drive (CHAT_LOG_PATH). This table is kept for the tile-scoped message
 -- count and last-message metadata shown in the inventory UI.
 CREATE TABLE chat_messages (
-  id         INTEGER PRIMARY KEY,
+  id         INTEGER PRIMARY KEY NOT NULL,
   tile_id    INTEGER NOT NULL REFERENCES tiles(id),
   sender_id  INTEGER NOT NULL REFERENCES users(id),
   message    TEXT NOT NULL,
@@ -52,7 +52,7 @@ CREATE TABLE chat_messages (
 );
 
 CREATE TABLE refill_requests (
-  id               INTEGER PRIMARY KEY,
+  id               INTEGER PRIMARY KEY NOT NULL,
   tile_id          INTEGER NOT NULL REFERENCES tiles(id),
   requested_by     INTEGER NOT NULL REFERENCES users(id),
   approved_by      INTEGER REFERENCES users(id),
@@ -71,7 +71,7 @@ CREATE INDEX idx_refill_timer ON refill_requests(status, timer_expires_at);
 
 -- Event log for future trend analytics (Phase 3). Populated from day 1.
 CREATE TABLE inventory_events (
-  id         INTEGER PRIMARY KEY,
+  id         INTEGER PRIMARY KEY NOT NULL,
   tile_id    INTEGER NOT NULL REFERENCES tiles(id),
   event_type TEXT NOT NULL CHECK(event_type IN ('import', 'manual_edit', 'refill_fulfilled')),
   old_qty    INTEGER NOT NULL,

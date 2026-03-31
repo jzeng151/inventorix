@@ -25,6 +25,9 @@ pub enum AppError {
     #[error(transparent)]
     Database(#[from] sqlx::Error),
 
+    #[error("Template error: {0}")]
+    Template(#[from] tera::Error),
+
     #[error("Internal error: {0}")]
     Internal(String),
 }
@@ -37,6 +40,10 @@ impl IntoResponse for AppError {
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, self.to_string()),
             AppError::Conflict(msg) => (StatusCode::CONFLICT, msg.clone()),
             AppError::ValidationError(msg) => (StatusCode::UNPROCESSABLE_ENTITY, msg.clone()),
+            AppError::Template(e) => {
+                tracing::error!("Template error: {e}");
+                (StatusCode::INTERNAL_SERVER_ERROR, "Template error".to_string())
+            }
             AppError::Database(e) => {
                 tracing::error!("Database error: {e}");
                 (StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string())
