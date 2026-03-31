@@ -127,6 +127,49 @@
       if (e.key === 'Enter') row.click();
     });
   });
+
+  // ── WebSocket: live qty updates + disconnect banner ───────────────────────
+  (function () {
+    const WS_URL = (location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/ws';
+    const banner = document.getElementById('ws-banner');
+    let ws, reconnectDelay = 1000;
+
+    function connect() {
+      ws = new WebSocket(WS_URL);
+
+      ws.onopen = function () {
+        reconnectDelay = 1000;
+        banner.style.display = 'none';
+      };
+
+      ws.onmessage = function (e) {
+        try {
+          const event = JSON.parse(e.data);
+          if (event.type === 'inventory_update') {
+            const row = document.getElementById('tile-row-' + event.tile_id);
+            if (!row) return;
+            const badge = row.querySelector('.badge');
+            if (badge) {
+              // Update qty text (first text node inside badge, before the dot span)
+              badge.childNodes.forEach(function (node) {
+                if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
+                  node.textContent = ' ' + event.new_qty + ' ';
+                }
+              });
+            }
+          }
+        } catch (_) {}
+      };
+
+      ws.onclose = function () {
+        banner.style.display = '';
+        setTimeout(connect, reconnectDelay);
+        reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+      };
+    }
+
+    connect();
+  })();
 })();
 </script>
 {% endblock %}

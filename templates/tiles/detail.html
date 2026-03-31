@@ -14,9 +14,10 @@
       {{ tile.item_number }}
       {% if tile.new_bin %} · {{ tile.new_bin }}{% endif %}
     </h1>
-    <span class="badge badge--{{ tile.health }}"
+    <span id="qty-badge"
+          class="badge badge--{{ tile.health }}"
           aria-label="{{ tile.health | title }}: {{ tile.qty }} in stock">
-      {{ tile.qty }}
+      <span id="qty-badge-value">{{ tile.qty }}</span>
       <span class="badge__dot" aria-hidden="true"></span>
     </span>
   </div>
@@ -75,7 +76,7 @@
       {% else %}
       <div class="detail-qty-readonly">
         <span class="form-label">Qty</span>
-        <span class="qty-value">{{ tile.qty }}</span>
+        <span class="qty-value" id="qty-display">{{ tile.qty }}</span>
       </div>
       <div class="detail-notes-readonly">
         <span class="form-label">Notes</span>
@@ -128,24 +129,136 @@
 
     </section>
 
-    <!-- Right: chat (40%) — wired up in Lane C -->
-    <section class="detail-chat" aria-label="Tile chat"
-             aria-live="polite" id="chat-messages">
-      <h2 class="detail-section-heading">Chat</h2>
-      <div class="chat-empty">
-        <p>No messages yet.</p>
-        <p class="detail-empty-sub">Use chat for questions, notes, or updates about this tile.</p>
+    <!-- Right: chat (40%) -->
+    <section class="detail-chat" aria-label="Tile chat">
+      <h2 class="detail-section-heading">
+        Chat
+        {% if auth_user_role == "admin" %}
+        <button class="btn btn--secondary btn--sm"
+                style="float:right;font-weight:normal"
+                hx-get="/tiles/{{ tile.id }}/chat"
+                hx-target="#chat-list"
+                hx-swap="innerHTML">
+          Load history
+        </button>
+        {% endif %}
+      </h2>
+
+      <div id="chat-list" class="chat-list" aria-live="polite">
+        <div class="chat-empty">
+          <p>No messages yet.</p>
+          <p class="detail-empty-sub">Use chat for questions, notes, or updates about this tile.</p>
+        </div>
       </div>
-      <form class="chat-compose" aria-label="Send message">
-        <input type="text" class="form-input chat-input"
+
+      <form id="chat-form" class="chat-compose" aria-label="Send message">
+        <input id="chat-input" type="text" class="form-input chat-input"
                placeholder="Type a message…"
-               disabled
-               title="Chat coming soon (Lane C)">
-        <button type="submit" class="btn btn--primary" disabled>Send</button>
+               autocomplete="off">
+        <button type="submit" class="btn btn--primary">Send</button>
       </form>
-      <p class="detail-empty-sub" style="margin-top:4px">Chat available in next update.</p>
+      <p id="ws-status" class="detail-empty-sub ws-status-msg" style="display:none"></p>
     </section>
 
   </div><!-- /.detail-columns -->
 </div><!-- /.detail-page -->
+
+<script>
+(function () {
+  const TILE_ID = {{ tile.id }};
+  const WS_URL = (location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/ws';
+  let ws, reconnectDelay = 1000;
+
+  function connect() {
+    ws = new WebSocket(WS_URL);
+
+    ws.onopen = function () {
+      reconnectDelay = 1000;
+      setStatus('');
+    };
+
+    ws.onmessage = function (e) {
+      try {
+        const event = JSON.parse(e.data);
+        if (event.type === 'chat_message' && event.tile_id === TILE_ID) {
+          appendChatMessage(event.sender_name, event.message);
+        } else if (event.type === 'inventory_update' && event.tile_id === TILE_ID) {
+          updateQty(event.new_qty);
+        }
+      } catch (_) {}
+    };
+
+    ws.onclose = function () {
+      setStatus('⚠ Disconnected — reconnecting…');
+      setTimeout(connect, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 2, 30000);
+    };
+  }
+
+  function appendChatMessage(senderName, message) {
+    const list = document.getElementById('chat-list');
+    const empty = list.querySelector('.chat-empty');
+    if (empty) empty.remove();
+
+    const div = document.createElement('div');
+    div.className = 'chat-msg';
+    div.innerHTML =
+      '<span class="chat-msg__meta"><strong>' + esc(senderName) + '</strong></span>' +
+      '<p class="chat-msg__body">' + esc(message) + '</p>';
+    list.appendChild(div);
+    list.scrollTop = list.scrollHeight;
+  }
+
+  function updateQty(qty) {
+    document.querySelectorAll('#qty-display, #qty-badge-value, .qty-value').forEach(function (el) {
+      el.textContent = qty;
+    });
+    const input = document.getElementById('qty-input');
+    if (input) input.value = qty;
+  }
+
+  function setStatus(msg) {
+    const el = document.getElementById('ws-status');
+    if (!el) return;
+    el.textContent = msg;
+    el.style.display = msg ? '' : 'none';
+  }
+
+  function esc(str) {
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // ── Chat form ─────────────────────────────────────────────────────────────
+  document.getElementById('chat-form').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    const input = document.getElementById('chat-input');
+    const msg = input.value.trim();
+    if (!msg) return;
+
+    const btn = this.querySelector('button[type=submit]');
+    btn.disabled = true;
+    try {
+      const res = await fetch('/tiles/' + TILE_ID + '/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'message=' + encodeURIComponent(msg),
+      });
+      if (res.ok) {
+        input.value = '';
+      }
+    } catch (_) {
+      setStatus('Failed to send — check connection');
+    } finally {
+      btn.disabled = false;
+      input.focus();
+    }
+  });
+
+  connect();
+})();
+</script>
 {% endblock %}

@@ -1,0 +1,14 @@
+{% if messages | length == 0 %}
+<p class="detail-empty-sub" style="text-align:center;padding:var(--space-6) 0">
+  No messages in the last 7 days.
+</p>
+{% else %}
+{% for msg in messages %}
+<div class="chat-msg" data-role="{{ msg.role }}">
+  <span class="chat-msg__meta">
+    <strong>{{ msg.user_name }}</strong>
+  </span>
+  <p class="chat-msg__body">{{ msg.message }}</p>
+</div>
+{% endfor %}
+{% endif %}

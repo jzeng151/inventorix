@@ -28,6 +28,7 @@ pub async fn start_server(listener: TcpListener) {
         state.db.clone(),
         state.config.db_path.clone(),
         state.config.backup_dir.clone(),
+        state.config.chat_log_path.clone(),
     );
 
     let router = routes::build_router(state).await;

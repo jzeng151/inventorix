@@ -34,8 +34,8 @@ pub async fn build_router(state: AppState) -> Router {
         // Feature routes
         .merge(health::router())
         .merge(tiles::router())
+        .merge(chat::router())
         // TODO (Lane D): .merge(import::router()) .merge(export::router())
-        // TODO (Lane C): .merge(chat::router())
         // TODO (Lane F): .merge(refill::router())
         // TODO (Admin):  .merge(admin::router())
         // Static assets (CSS, HTMX)
