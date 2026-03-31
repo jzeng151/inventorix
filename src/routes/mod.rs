@@ -31,9 +31,9 @@ pub async fn build_router(state: AppState) -> Router {
     Router::new()
         // Auth
         .merge(crate::auth::routes::router())
-        // Feature routes (added lane by lane)
+        // Feature routes
         .merge(health::router())
-        // TODO (Lane B): .merge(tiles::router())
+        .merge(tiles::router())
         // TODO (Lane D): .merge(import::router()) .merge(export::router())
         // TODO (Lane C): .merge(chat::router())
         // TODO (Lane F): .merge(refill::router())

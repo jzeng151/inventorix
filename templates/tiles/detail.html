@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+
+{% block title %}{{ tile.item_number }} — Inventorix{% endblock %}
+
+{% block content %}
+<div class="detail-page">
+
+  <!-- Back link -->
+  <a href="/" class="detail-back">← Back to inventory</a>
+
+  <!-- Tile header -->
+  <div class="detail-header">
+    <h1 class="detail-title">
+      {{ tile.item_number }}
+      {% if tile.new_bin %} · {{ tile.new_bin }}{% endif %}
+    </h1>
+    <span class="badge badge--{{ tile.health }}"
+          aria-label="{{ tile.health | title }}: {{ tile.qty }} in stock">
+      {{ tile.qty }}
+      <span class="badge__dot" aria-hidden="true"></span>
+    </span>
+  </div>
+
+  <!-- Two-column layout -->
+  <div class="detail-columns">
+
+    <!-- Left: tile fields (60%) -->
+    <section class="detail-fields" aria-label="Tile details">
+
+      <table class="detail-table">
+        <tr><th>Item #</th>     <td>{{ tile.item_number }}</td></tr>
+        <tr><th>Collection</th> <td>{{ tile.collection | default(value="—") }}</td></tr>
+        <tr><th>GTS Desc</th>   <td>{{ tile.gts_description | default(value="—") }}</td></tr>
+        <tr><th>New Bin</th>    <td>{{ tile.new_bin | default(value="—") }}</td></tr>
+        <tr><th>Overflow Rack</th><td>{% if tile.overflow_rack %}Yes{% else %}No{% endif %}</td></tr>
+        <tr><th>Order #</th>    <td>{{ tile.order_number | default(value="—") }}</td></tr>
+        <tr><th>Coordinator</th><td>{{ tile.coordinator_name | default(value="—") }}</td></tr>
+        <tr><th>Sales Rep</th>  <td>{{ tile.sales_rep_name | default(value="—") }}</td></tr>
+      </table>
+
+      <!-- Inline qty edit (Coordinator / Admin only) -->
+      {% if auth_user_role == "coordinator" or auth_user_role == "admin" %}
+      <div class="detail-edit-qty">
+        <form id="qty-form"
+              hx-put="/tiles/{{ tile.id }}"
+              hx-target="#qty-display"
+              hx-swap="outerHTML">
+          <label for="qty-input" class="form-label">Qty</label>
+          <div class="qty-row">
+            <span id="qty-display" class="qty-value">{{ tile.qty }}</span>
+            <input id="qty-input" name="qty" type="number" min="0"
+                   class="form-input qty-input" value="{{ tile.qty }}" style="display:none">
+            <button type="button" class="btn btn--secondary btn--sm" id="qty-edit-btn"
+                    onclick="document.getElementById('qty-input').style.display='';
+                             document.getElementById('qty-display').style.display='none';
+                             this.style.display='none';
+                             document.getElementById('qty-save-btn').style.display='';">
+              edit
+            </button>
+            <button type="submit" class="btn btn--primary btn--sm" id="qty-save-btn" style="display:none">
+              save
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <div class="detail-edit-notes">
+        <form hx-put="/tiles/{{ tile.id }}" hx-swap="none">
+          <label for="notes-input" class="form-label">Notes</label>
+          <textarea id="notes-input" name="notes" class="form-textarea" rows="3"
+                    placeholder="Add notes…">{{ tile.notes | default(value="") }}</textarea>
+          <button type="submit" class="btn btn--secondary btn--sm">Save notes</button>
+        </form>
+      </div>
+      {% else %}
+      <div class="detail-qty-readonly">
+        <span class="form-label">Qty</span>
+        <span class="qty-value">{{ tile.qty }}</span>
+      </div>
+      <div class="detail-notes-readonly">
+        <span class="form-label">Notes</span>
+        <p>{{ tile.notes | default(value="—") }}</p>
+      </div>
+      {% endif %}
+
+      <!-- Refill section -->
+      <div class="detail-refill" aria-label="Refill request">
+        <h2 class="detail-section-heading">Refill Request</h2>
+
+        {% if tile.refill_status == "pending" %}
+          <div class="refill-info">
+            <span class="btn btn--amber-fill" aria-live="polite"
+                  aria-label="Refill pending: {{ tile.refill_countdown | default(value='') }} remaining">
+              ⏱ {{ tile.refill_countdown | default(value="—") }}
+            </span>
+            <span class="refill-meta">
+              Qty requested: {{ tile.refill_qty | default(value="—") }}
+            </span>
+          </div>
+          {% if auth_user_role == "sales_rep" and tile.refill_id %}
+          <form hx-post="/refill/{{ tile.refill_id }}/approve" hx-swap="none" style="margin-top:8px">
+            <button type="submit" class="btn btn--blue-outline">Approve</button>
+          </form>
+          {% endif %}
+
+        {% elif tile.refill_status == "approved" %}
+          <span class="refill-badge refill-badge--approved">Approved ✓</span>
+          {% if (auth_user_role == "coordinator" or auth_user_role == "admin") and tile.refill_id %}
+          <form hx-post="/refill/{{ tile.refill_id }}/fulfill" hx-swap="none" style="margin-top:8px">
+            <button type="submit" class="btn btn--secondary btn--sm">Mark Fulfilled</button>
+          </form>
+          {% endif %}
+
+        {% elif tile.refill_status == "fulfilled" %}
+          <span class="refill-badge refill-badge--fulfilled">Fulfilled</span>
+
+        {% else %}
+          {% if auth_user_role == "coordinator" or auth_user_role == "admin" %}
+          <p class="detail-empty-sub">No active refill request.</p>
+          <button class="btn btn--amber-outline" disabled title="Refill workflow coming soon (Lane F)">
+            Request Refill
+          </button>
+          {% else %}
+          <p class="detail-empty-sub">No active refill request.</p>
+          {% endif %}
+        {% endif %}
+      </div>
+
+    </section>
+
+    <!-- Right: chat (40%) — wired up in Lane C -->
+    <section class="detail-chat" aria-label="Tile chat"
+             aria-live="polite" id="chat-messages">
+      <h2 class="detail-section-heading">Chat</h2>
+      <div class="chat-empty">
+        <p>No messages yet.</p>
+        <p class="detail-empty-sub">Use chat for questions, notes, or updates about this tile.</p>
+      </div>
+      <form class="chat-compose" aria-label="Send message">
+        <input type="text" class="form-input chat-input"
+               placeholder="Type a message…"
+               disabled
+               title="Chat coming soon (Lane C)">
+        <button type="submit" class="btn btn--primary" disabled>Send</button>
+      </form>
+      <p class="detail-empty-sub" style="margin-top:4px">Chat available in next update.</p>
+    </section>
+
+  </div><!-- /.detail-columns -->
+</div><!-- /.detail-page -->
+{% endblock %}
