@@ -38,6 +38,10 @@ impl ConnectionManager {
     pub fn connection_count(&self, branch_id: i64) -> usize {
         self.connections.get(&branch_id).map_or(0, |v| v.len())
     }
+
+    pub fn total_connections(&self) -> usize {
+        self.connections.iter().map(|e| e.value().len()).sum()
+    }
 }
 
 impl Default for ConnectionManager {

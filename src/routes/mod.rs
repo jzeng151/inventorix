@@ -2,6 +2,7 @@ use axum::Router;
 use tower_http::services::ServeDir;
 use tower_sessions::{Expiry, SessionManagerLayer};
 use tower_sessions::cookie::time::Duration;
+use tower_sessions::cookie::SameSite;
 use tower_sessions_sqlx_store::SqliteStore;
 
 use crate::AppState;
@@ -25,7 +26,9 @@ pub async fn build_router(state: AppState) -> Router {
         .expect("failed to migrate session store");
 
     let session_layer = SessionManagerLayer::new(session_store)
-        .with_secure(false) // HTTP on LAN — no HTTPS required
+        .with_secure(false)                         // HTTP on LAN — no HTTPS required
+        .with_http_only(true)                       // prevent JS from reading the cookie
+        .with_same_site(SameSite::Strict)           // CSRF mitigation
         .with_expiry(Expiry::OnInactivity(Duration::hours(8)));
 
     Router::new()

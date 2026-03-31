@@ -74,3 +74,4 @@ async-trait = "0.1"
 
 [dev-dependencies]
 axum-test = "19"
+rust_xlsxwriter = "0.79"

@@ -25,7 +25,7 @@ async fn import_page(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> Result<impl IntoResponse, AppError> {
-    if auth.role == Role::SalesRep {
+    if auth.role != Role::Admin && auth.role != Role::Coordinator {
         return Err(AppError::Forbidden);
     }
     let mut ctx = Context::new();

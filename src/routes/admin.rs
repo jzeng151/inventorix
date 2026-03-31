@@ -119,6 +119,27 @@ async fn create_user(
             "Name, email, and password are required".into(),
         ));
     }
+    if form.name.len() > 100 {
+        return Err(AppError::ValidationError("Name must be 100 characters or fewer".into()));
+    }
+    if form.email.len() > 254 {
+        return Err(AppError::ValidationError("Email must be 254 characters or fewer".into()));
+    }
+    if form.password.len() > 128 {
+        return Err(AppError::ValidationError("Password must be 128 characters or fewer".into()));
+    }
+    // Basic email format check: local@domain.tld
+    {
+        let parts: Vec<&str> = form.email.splitn(2, '@').collect();
+        let valid = parts.len() == 2
+            && !parts[0].is_empty()
+            && parts[1].contains('.')
+            && !parts[1].starts_with('.')
+            && !parts[1].ends_with('.');
+        if !valid {
+            return Err(AppError::ValidationError("Invalid email format".into()));
+        }
+    }
 
     let salt = SaltString::generate(&mut OsRng);
     let hash = Argon2::default()

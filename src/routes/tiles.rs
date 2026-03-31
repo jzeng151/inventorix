@@ -281,6 +281,38 @@ pub async fn update_tile(
         );
     }
 
+    if let Some(ref notes) = form.notes {
+        if notes.len() > 2_000 {
+            return Err(AppError::ValidationError(
+                "Notes must be 2,000 characters or fewer".into(),
+            ));
+        }
+    }
+
+    // Validate assigned users belong to the same branch (prevent cross-branch assignment)
+    if let Some(cid) = form.sample_coordinator_id {
+        sqlx::query!(
+            "SELECT id FROM users WHERE id = ? AND branch_id = ? AND is_active = 1",
+            cid, auth.branch_id
+        )
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or_else(|| AppError::ValidationError(
+            "Coordinator not found in this branch".into(),
+        ))?;
+    }
+    if let Some(rid) = form.sales_rep_id {
+        sqlx::query!(
+            "SELECT id FROM users WHERE id = ? AND branch_id = ? AND is_active = 1",
+            rid, auth.branch_id
+        )
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or_else(|| AppError::ValidationError(
+            "Sales rep not found in this branch".into(),
+        ))?;
+    }
+
     if form.notes.is_some() || form.sample_coordinator_id.is_some() || form.sales_rep_id.is_some()
     {
         sqlx::query!(

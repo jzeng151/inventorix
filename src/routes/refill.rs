@@ -37,8 +37,10 @@ async fn request_refill(
     if auth.role == Role::SalesRep {
         return Err(AppError::Forbidden);
     }
-    if form.qty <= 0 {
-        return Err(AppError::ValidationError("Qty must be greater than 0".into()));
+    if form.qty <= 0 || form.qty > 10_000 {
+        return Err(AppError::ValidationError(
+            "Qty must be between 1 and 10,000".into(),
+        ));
     }
 
     // Branch isolation

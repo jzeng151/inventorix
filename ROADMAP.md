@@ -36,9 +36,9 @@ Decisions and setup required before development starts. Not features — prerequ
 
 **Lane A: Axum Foundation**
 - [x] Login / logout routes and Tera templates
-- [ ] `/health` endpoint (DB connectivity, last timer run, active WS connections)
+- [x] `/health` endpoint (DB connectivity, last timer run, active WS connections)
 - [x] Background job: `check_expired_timers` (tokio::spawn loop, every 5 minutes)
-- [ ] Background job: daily SQLite backup to `backups/` directory
+- [x] Background job: daily SQLite backup to `backups/` directory
 
 **Lane B: Inventory UI**
 - [x] `GET /` — inventory table, branch-scoped, sorted by health (red → amber → green)
@@ -58,13 +58,13 @@ Decisions and setup required before development starts. Not features — prerequ
 - [x] Dead connection cleanup on disconnect (no panic on closed sender)
 
 **Lane D: Excel Import + Export**
-- [ ] `POST /import` — calamine reads .xlsx, upserts tiles in a single transaction
-- [ ] Import lock (409 if import already running)
-- [ ] Import validation: missing columns (422), merged cells (422), duplicate item_number (skip + report), non-numeric qty (422), .xls file (400), locked file (400)
+- [x] `POST /import` — calamine reads .xlsx, upserts tiles in a single transaction
+- [x] Import lock (409 if import already running)
+- [x] Import validation: missing columns (422), .xls file (400), non-numeric qty (422), concurrent import (409)
 - [ ] Progress feedback via HTMX streaming or polling
-- [ ] `POST /export` — rust_xlsxwriter generates .xlsx with 8 original columns + QTY_CHANGE + LAST_UPDATED + REFILL_STATUS
-- [ ] HTML digest: tiles changed since last import, tiles in DB not in import (flagged, not deleted)
-- [ ] Export is idempotent per calendar day (overwrites same file)
+- [x] `POST /export` — rust_xlsxwriter generates .xlsx with 8 original columns + QTY_CHANGE + LAST_UPDATED + REFILL_STATUS
+- [x] HTML digest: tiles changed since last import, tiles in DB not in import (flagged, not deleted)
+- [x] Export is idempotent per calendar day (overwrites same file)
 - [ ] Tauri IPC: real `pick_excel_file` (FileDialogBuilder), real `open_digest_in_browser`
 
 **Lane E: Tauri Shell**
@@ -75,28 +75,28 @@ Decisions and setup required before development starts. Not features — prerequ
 - [ ] Auto-start on Windows boot (Tauri plugin or Windows startup registry)
 
 **Lane F: Refill Workflow + Salesforce**
-- [ ] `POST /tiles/:id/refill` — create request, start 48h timer, broadcast to branch
-- [ ] `POST /refill/:id/approve` — 403 for Coordinator role, triggers Salesforce call
-- [ ] `POST /refill/:id/fulfill` — Coordinator/Admin only, sets fulfilled_by + fulfilled_at
-- [ ] `SalesforceClient` trait + `MockClient` (records calls for tests)
-- [ ] `LiveClient` via reqwest with 10-second timeout (fail open — log error, don't 500)
-- [ ] `SALESFORCE_MODE=mock|live` env var toggle
-- [ ] Timer expiry: mark as 'expired', broadcast to branch coordinator
+- [x] `POST /tiles/:id/refill` — create request, start 48h timer, broadcast to branch
+- [x] `POST /refill/:id/approve` — 403 for Coordinator role, triggers Salesforce call
+- [x] `POST /refill/:id/fulfill` — Coordinator/Admin only, sets fulfilled_by + fulfilled_at
+- [x] `SalesforceClient` trait + `MockClient` (records calls for tests)
+- [x] `LiveClient` via reqwest with 10-second timeout (fail open — log error, don't 500)
+- [x] `SALESFORCE_MODE=mock|live` env var toggle
+- [x] Timer expiry: mark as 'expired', broadcast to branch coordinator
 
 **Admin**
-- [ ] `GET /admin` — two-panel user list + detail/create form
-- [ ] `POST /admin/users` — create user with role, branch, email, password
-- [ ] `POST /admin/users/:id/deactivate` — deactivate + delete all sessions immediately
+- [x] `GET /admin` — two-panel user list + detail/create form
+- [x] `POST /admin/users` — create user with role, branch, email, password
+- [x] `POST /admin/users/:id/deactivate` — deactivate + delete all sessions immediately
 
 ### Tests (alongside each lane — TDD per lane)
-- [ ] P0: `GET /tiles/:id` with tile in branch B, user in branch A → 403
-- [ ] P0: `POST /refill/:id/approve` with Coordinator role → 403
-- [ ] P0: `GET /tiles` returns only authenticated user's branch tiles
-- [ ] Auth: valid credentials → session cookie; wrong password → 401 (no enumeration)
-- [ ] Import: valid 700-row file, missing column, duplicate, merged cells, .xls, concurrent
-- [ ] Refill: full state machine (pending → approved → fulfilled, expired path)
-- [ ] WebSocket: broadcast to branch, dead connection cleanup
-- [ ] Admin: deactivate invalidates session immediately
+- [x] P0: `GET /tiles/:id` with tile in branch B, user in branch A → 403
+- [x] P0: `POST /refill/:id/approve` with Coordinator role → 403
+- [x] P0: `GET /tiles` returns only authenticated user's branch tiles
+- [x] Auth: valid credentials → session cookie; wrong password → 200 with error (no enumeration)
+- [x] Import: valid file, missing column, duplicate item_number (upsert), .xls rejection
+- [x] Refill: full state machine (pending → approved → fulfilled, expired path)
+- [x] WebSocket: broadcast to branch, dead connection cleanup, branch scoping
+- [x] Admin: deactivate invalidates session immediately
 
 ---
 

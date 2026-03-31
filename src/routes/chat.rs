@@ -79,6 +79,11 @@ async fn send_chat(
     if message.is_empty() {
         return Err(AppError::ValidationError("Message cannot be empty".into()));
     }
+    if message.len() > 1_000 {
+        return Err(AppError::ValidationError(
+            "Message must be 1,000 characters or fewer".into(),
+        ));
+    }
 
     write_chat_log(
         &state.config.chat_log_path,

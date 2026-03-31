@@ -52,14 +52,14 @@
   <table class="inventory" role="grid" id="inventory-table" aria-label="Tile inventory">
     <thead>
       <tr>
-        <th scope="col">ITEM #</th>
-        <th scope="col">COLLECTION</th>
-        <th scope="col">NEW BIN</th>
-        <th scope="col">QTY</th>
-        <th scope="col">COORDINATOR</th>
-        <th scope="col">SALES REP</th>
-        <th scope="col">REFILL STATUS</th>
-        <th scope="col">NOTES</th>
+        <th scope="col" class="sortable" data-col="0" aria-sort="none">ITEM # <span class="sort-icon" aria-hidden="true">↕</span></th>
+        <th scope="col" class="sortable" data-col="1" aria-sort="none">COLLECTION <span class="sort-icon" aria-hidden="true">↕</span></th>
+        <th scope="col" class="sortable" data-col="2" aria-sort="none">NEW BIN <span class="sort-icon" aria-hidden="true">↕</span></th>
+        <th scope="col" class="sortable" data-col="3" aria-sort="none">QTY <span class="sort-icon" aria-hidden="true">↕</span></th>
+        <th scope="col" class="sortable" data-col="4" aria-sort="none">COORDINATOR <span class="sort-icon" aria-hidden="true">↕</span></th>
+        <th scope="col" class="sortable" data-col="5" aria-sort="none">SALES REP <span class="sort-icon" aria-hidden="true">↕</span></th>
+        <th scope="col" class="sortable" data-col="6" aria-sort="none">REFILL STATUS <span class="sort-icon" aria-hidden="true">↕</span></th>
+        <th scope="col" class="sortable" data-col="7" aria-sort="none">NOTES <span class="sort-icon" aria-hidden="true">↕</span></th>
       </tr>
     </thead>
     <tbody id="inventory-body">
@@ -131,6 +131,60 @@
     row.addEventListener('keydown', e => {
       if (e.key === 'Enter') row.click();
     });
+  });
+
+  // ── Column sort ────────────────────────────────────────────────────────────
+  const NUMERIC_COLS = new Set([3]); // QTY column is numeric
+  let sortCol = null, sortDir = 'asc';
+
+  function cellKey(cell, colIdx) {
+    const raw = cell.textContent.trim();
+    if (NUMERIC_COLS.has(colIdx)) {
+      const n = parseFloat(raw);
+      return isNaN(n) ? -Infinity : n;
+    }
+    // Sort blanks and em-dashes to the end on ascending, start on descending
+    if (!raw || raw === '—') return '\u{10FFFF}';
+    return raw.toLowerCase();
+  }
+
+  function sortTable(colIdx) {
+    if (sortCol === colIdx) {
+      sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      sortCol = colIdx;
+      sortDir = 'asc';
+    }
+
+    const tbody = document.getElementById('inventory-body');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+
+    rows.sort((a, b) => {
+      const ka = cellKey(a.querySelectorAll('td')[colIdx], colIdx);
+      const kb = cellKey(b.querySelectorAll('td')[colIdx], colIdx);
+      let cmp;
+      if (typeof ka === 'number' && typeof kb === 'number') {
+        cmp = ka - kb;
+      } else {
+        cmp = String(ka).localeCompare(String(kb), undefined, { numeric: true, sensitivity: 'base' });
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+
+    rows.forEach(row => tbody.appendChild(row));
+
+    // Update aria-sort and icon on every header
+    document.querySelectorAll('table.inventory thead th[data-col]').forEach(th => {
+      const isActive = parseInt(th.dataset.col) === colIdx;
+      th.setAttribute('aria-sort', isActive ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none');
+      const icon = th.querySelector('.sort-icon');
+      if (icon) icon.textContent = isActive ? (sortDir === 'asc' ? '▲' : '▼') : '↕';
+      th.classList.toggle('sort-active', isActive);
+    });
+  }
+
+  document.querySelectorAll('table.inventory thead th[data-col]').forEach(th => {
+    th.addEventListener('click', () => sortTable(parseInt(th.dataset.col)));
   });
 
   // ── WebSocket: live qty updates + disconnect banner ───────────────────────

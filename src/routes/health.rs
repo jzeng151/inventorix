@@ -1,13 +1,41 @@
-use axum::{routing::get, Json, Router};
+use axum::{extract::State, routing::get, Json, Router};
 use serde_json::json;
 
-/// Generic over S so this router merges into any typed Router<S>.
-/// health_check doesn't use app state, so it's compatible with any state.
-pub fn router<S: Clone + Send + Sync + 'static>() -> Router<S> {
+use crate::{auth::extractor::AuthUser, AppState};
+
+pub fn router() -> Router<AppState> {
     Router::new().route("/health", get(health_check))
 }
 
-async fn health_check() -> Json<serde_json::Value> {
-    // TODO (Lane A): check DB connectivity, last timer run, active WS connections
-    Json(json!({ "status": "ok" }))
+async fn health_check(
+    State(state): State<AppState>,
+    _auth: AuthUser,
+) -> Json<serde_json::Value> {
+    // DB ping
+    let db_ok = sqlx::query("SELECT 1")
+        .execute(&state.db)
+        .await
+        .is_ok();
+
+    // Active WebSocket connections across all branches
+    let ws_connections: usize = state
+        .ws_manager
+        .total_connections();
+
+    // Pending refill requests (proxy for "timer loop is running")
+    let pending_refills: i64 = sqlx::query_scalar!(
+        "SELECT COUNT(*) FROM refill_requests WHERE status = 'pending'"
+    )
+    .fetch_one(&state.db)
+    .await
+    .unwrap_or(0);
+
+    let status = if db_ok { "ok" } else { "degraded" };
+
+    Json(json!({
+        "status": status,
+        "db": db_ok,
+        "ws_connections": ws_connections,
+        "pending_refills": pending_refills,
+    }))
 }

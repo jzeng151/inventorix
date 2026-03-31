@@ -61,7 +61,7 @@ pub async fn login(
         return Ok(state.render("login.html", &ctx)?.into_response());
     }
 
-    let user = user.unwrap();
+    let user = user.ok_or(AppError::Unauthorized)?;
 
     // Regenerate session ID on login to prevent session fixation
     session
