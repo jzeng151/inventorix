@@ -73,4 +73,4 @@ rand = "0.8"
 async-trait = "0.1"
 
 [dev-dependencies]
-axum-test = "16"
+axum-test = "19"

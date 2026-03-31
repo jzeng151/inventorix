@@ -56,6 +56,26 @@ impl AppState {
         })
     }
 
+    /// Build an AppState from an already-initialised pool (used by #[sqlx::test]).
+    pub fn for_test(pool: sqlx::SqlitePool) -> Self {
+        use crate::salesforce::client::MockClient;
+        let tera = Tera::new("templates/**/*.html").expect("templates must load for tests");
+        Self {
+            db: pool,
+            import_lock: Arc::new(Mutex::new(false)),
+            ws_manager: Arc::new(ConnectionManager::new()),
+            salesforce: Arc::new(MockClient::new()),
+            tera: Arc::new(tera),
+            config: AppConfig {
+                db_path: ":memory:".to_string(),
+                session_secret: "test-secret-at-least-64-bytes-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".to_string(),
+                salesforce_mode: SalesforceMode::Mock,
+                chat_log_path: "/tmp/inventorix-test-chat".to_string(),
+                backup_dir: "/tmp/inventorix-test-backups".to_string(),
+            },
+        }
+    }
+
     /// Render a Tera template. Use this in every handler instead of calling tera directly.
     pub fn render(&self, template: &str, ctx: &tera::Context) -> Result<axum::response::Html<String>, crate::AppError> {
         self.tera.render(template, ctx)
