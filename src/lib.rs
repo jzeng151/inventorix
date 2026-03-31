@@ -24,12 +24,7 @@ pub async fn start_server(listener: TcpListener) {
         .expect("failed to initialize AppState");
 
     // Spawn background jobs (tokio::spawn loops — no scheduler crate)
-    jobs::timers::spawn_all(
-        state.db.clone(),
-        state.config.db_path.clone(),
-        state.config.backup_dir.clone(),
-        state.config.chat_log_path.clone(),
-    );
+    jobs::timers::spawn_all(state.clone(), state.config.chat_log_path.clone());
 
     let router = routes::build_router(state).await;
 

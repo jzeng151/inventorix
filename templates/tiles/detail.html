@@ -118,9 +118,14 @@
         {% else %}
           {% if auth_user_role == "coordinator" or auth_user_role == "admin" %}
           <p class="detail-empty-sub">No active refill request.</p>
-          <button class="btn btn--amber-outline" disabled title="Refill workflow coming soon (Lane F)">
-            Request Refill
-          </button>
+          <form hx-post="/tiles/{{ tile.id }}/refill" hx-swap="none" class="refill-request-form">
+            <div class="qty-row" style="gap:var(--space-2);margin-bottom:var(--space-2)">
+              <label for="refill-qty" class="form-label" style="margin:0">Qty</label>
+              <input id="refill-qty" name="qty" type="number" min="1"
+                     class="form-input qty-input" value="1" required>
+            </div>
+            <button type="submit" class="btn btn--amber-outline">Request Refill</button>
+          </form>
           {% else %}
           <p class="detail-empty-sub">No active refill request.</p>
           {% endif %}

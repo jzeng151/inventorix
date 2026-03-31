@@ -4,6 +4,7 @@ use tokio::sync::Mutex;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode};
 use tera::Tera;
 
+use crate::salesforce::client::{LiveClient, MockClient, SalesforceClient};
 use crate::ws::manager::ConnectionManager;
 
 #[derive(Clone)]
@@ -13,6 +14,7 @@ pub struct AppState {
     /// Returns 409 if held.
     pub import_lock: Arc<Mutex<bool>>,
     pub ws_manager: Arc<ConnectionManager>,
+    pub salesforce: Arc<dyn SalesforceClient + Send + Sync>,
     pub tera: Arc<Tera>,
     pub config: AppConfig,
 }
@@ -35,10 +37,20 @@ impl AppState {
 
         let tera = Tera::new("templates/**/*.html")?;
 
+        let salesforce: Arc<dyn SalesforceClient + Send + Sync> =
+            match config.salesforce_mode {
+                SalesforceMode::Live => Arc::new(LiveClient::new(
+                    std::env::var("SALESFORCE_INSTANCE_URL")
+                        .unwrap_or_else(|_| "https://example.salesforce.com".to_string()),
+                )),
+                SalesforceMode::Mock => Arc::new(MockClient::new()),
+            };
+
         Ok(Self {
             db: pool,
             import_lock: Arc::new(Mutex::new(false)),
             ws_manager: Arc::new(ConnectionManager::new()),
+            salesforce,
             tera: Arc::new(tera),
             config,
         })

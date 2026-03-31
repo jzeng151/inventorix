@@ -2,27 +2,25 @@
 
 use std::time::Duration;
 
+use crate::AppState;
+
 /// Spawns all background jobs. Called once from `start_server`.
-pub fn spawn_all(
-    pool: sqlx::SqlitePool,
-    db_path: String,
-    backup_dir: String,
-    chat_log_path: String,
-) {
+pub fn spawn_all(state: AppState, chat_log_path: String) {
     // ── Refill timer check: every 5 minutes ───────────────────────────────────
-    let pool_clone = pool.clone();
+    let state_clone = state.clone();
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(Duration::from_secs(300)).await;
-            if let Err(e) = check_expired_timers(&pool_clone).await {
+            if let Err(e) = check_expired_timers(&state_clone).await {
                 tracing::error!("Timer check failed: {e}");
             }
         }
     });
 
     // ── Daily jobs: backup + chat log purge ───────────────────────────────────
+    let db_path = state.config.db_path.clone();
+    let backup_dir = state.config.backup_dir.clone();
     tokio::spawn(async move {
-        // Wait until the next midnight before the first run
         tokio::time::sleep(until_next_midnight()).await;
         loop {
             daily_backup(&db_path, &backup_dir).await;
@@ -32,9 +30,39 @@ pub fn spawn_all(
     });
 }
 
-/// Marks refill_requests as 'expired' where status='pending' AND timer_expires_at < now().
-/// TODO (Lane F): implement fully.
-pub async fn check_expired_timers(_pool: &sqlx::SqlitePool) -> Result<(), sqlx::Error> {
+/// Marks pending refill_requests as 'expired' when their 48h timer has elapsed.
+/// Broadcasts RefillStatusChange to the affected branch so coordinators see it live.
+pub async fn check_expired_timers(state: &AppState) -> Result<(), sqlx::Error> {
+    let expired = sqlx::query!(
+        r#"
+        SELECT rr.id, t.branch_id
+        FROM refill_requests rr
+        JOIN tiles t ON rr.tile_id = t.id
+        WHERE rr.status = 'pending' AND rr.timer_expires_at < datetime('now')
+        "#
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    for row in expired {
+        sqlx::query!(
+            "UPDATE refill_requests SET status = 'expired' WHERE id = ?",
+            row.id
+        )
+        .execute(&state.db)
+        .await?;
+
+        state.ws_manager.broadcast(
+            row.branch_id,
+            crate::ws::manager::WsEvent::RefillStatusChange {
+                refill_id: row.id,
+                status: "expired".to_string(),
+            },
+        );
+
+        tracing::info!("Refill request {} expired", row.id);
+    }
+
     Ok(())
 }
 

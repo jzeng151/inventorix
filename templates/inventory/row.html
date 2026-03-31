@@ -29,9 +29,8 @@
         <button class="btn btn--amber-outline"
                 onclick="event.stopPropagation()"
                 hx-post="/tiles/{{ tile.id }}/refill"
-                hx-swap="none"
-                disabled
-                title="Refill workflow coming soon">Request Refill</button>
+                hx-vals='{"qty": "1"}'
+                hx-swap="none">Request Refill</button>
       {% endif %}
     {% elif auth_user_role == "sales_rep" %}
       {% if tile.refill_status == "pending" and tile.refill_id %}
