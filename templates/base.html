@@ -12,15 +12,10 @@
 
   <!-- Top Bar -->
   <header class="topbar" role="banner">
-    <span class="topbar__logo">INVENTORIX</span>
+    <a href="/" class="topbar__logo">INVENTORIX</a>
     <span class="topbar__branch">{{ branch_name | default(value="—") }}</span>
     <div class="topbar__spacer"></div>
-    <span class="topbar__user">
-      {{ auth_user_name | default(value="") }}
-      {% if auth_user_role %}
-        <span class="topbar__role">· {{ auth_user_role }}</span>
-      {% endif %}
-    </span>
+    <span class="topbar__user">{{ auth_user_name | default(value="") }}</span>
     {% if auth_user_role == "admin" %}
     <a href="/admin" class="btn btn--ghost">Admin</a>
     {% endif %}

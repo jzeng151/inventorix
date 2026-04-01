@@ -9,14 +9,13 @@ use sqlx::SqlitePool;
 #[sqlx::test(migrations = "./migrations")]
 async fn chat_message_too_long_is_rejected(pool: SqlitePool) {
     seed_user(&pool, 1, "Alice", "alice@test.com", "coordinator").await;
-    let tile_id = seed_tile(&pool, 1, "TILE-001", 10).await;
 
     let server = make_server(pool).await;
     login(&server, "alice@test.com").await;
 
     let long_msg = "x".repeat(1_001);
     let res = server
-        .post(&format!("/tiles/{tile_id}/chat"))
+        .post("/chat")
         .form(&[("message", long_msg.as_str())])
         .await;
 

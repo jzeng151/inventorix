@@ -7,7 +7,7 @@ use tokio::sync::mpsc;
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum WsEvent {
-    ChatMessage { tile_id: i64, sender_name: String, message: String },
+    ChatMessage { sender_name: String, role: String, message: String },
     InventoryUpdate { tile_id: i64, new_qty: i64 },
     RefillStatusChange { refill_id: i64, status: String },
 }

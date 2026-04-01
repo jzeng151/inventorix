@@ -1,0 +1,59 @@
+<div class="tile-card">
+  <div class="tile-card__header">
+    <h2 class="tile-card__title">{{ tile.item_number }}</h2>
+    <button class="chat-sidebar__close tile-card__close"
+            onclick="this.closest('dialog').close()"
+            aria-label="Close">✕</button>
+  </div>
+
+  <table class="tile-card__fields">
+    <tr>
+      <th>Collection</th>
+      <td>{{ tile.collection | default(value="—") }}</td>
+    </tr>
+    <tr>
+      <th>Bin</th>
+      <td>{{ tile.new_bin | default(value="—") }}</td>
+    </tr>
+    <tr>
+      <th>Quantity</th>
+      <td>
+        <span class="badge badge--{{ tile.health }}"
+              aria-label="{{ tile.health | title }}: {{ tile.qty }} in stock">
+          {{ tile.qty }}
+          <span class="badge__dot" aria-hidden="true"></span>
+        </span>
+      </td>
+    </tr>
+    {% if tile.coordinator_name %}
+    <tr>
+      <th>Coordinator</th>
+      <td>{{ tile.coordinator_name }}</td>
+    </tr>
+    {% endif %}
+    {% if tile.notes %}
+    <tr>
+      <th>Notes</th>
+      <td class="tile-card__notes">{{ tile.notes }}</td>
+    </tr>
+    {% endif %}
+  </table>
+
+  {% if auth_user_role == "coordinator" or auth_user_role == "admin" %}
+  <section class="tile-card__actions">
+    <form onsubmit="submitCardQtyChange(event, {{ tile.id }}, {{ tile.qty }})">
+      <p class="tile-card__action-label">Give out samples:</p>
+      <div class="qty-row">
+        <input type="number" name="give_out"
+               class="form-input qty-input"
+               min="1" max="{{ tile.qty }}" value="1"
+               aria-label="Units to give out">
+        <span class="tile-card__avail">of {{ tile.qty }} available</span>
+      </div>
+      <button type="submit" class="btn btn--primary btn--sm" style="margin-top:var(--space-3)">
+        Confirm Give Out
+      </button>
+    </form>
+  </section>
+  {% endif %}
+</div>

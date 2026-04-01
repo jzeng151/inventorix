@@ -1,7 +1,9 @@
 <tr class="row--{{ tile.health }}"
     id="tile-row-{{ tile.id }}"
     tabindex="0"
-    onclick="window.location='/tiles/{{ tile.id }}'"
+    data-tile-id="{{ tile.id }}"
+    data-tile-name="{{ tile.item_number }}"
+    onclick="copyItemNumber(this.dataset.tileName, event)"
     style="cursor:pointer">
   <td>{{ tile.item_number }}</td>
   <td>{{ tile.collection | default(value="—") }}</td>

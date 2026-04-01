@@ -19,6 +19,7 @@ pub fn router() -> Router<AppState> {
         .route("/", get(inventory_table))
         .route("/tiles/{id}", get(tile_detail))
         .route("/tiles/{id}", put(update_tile))
+        .route("/tiles/{id}/card", get(tile_card))
 }
 
 // ── DB row types (returned by sqlx) ──────────────────────────────────────────
@@ -221,6 +222,46 @@ pub async fn tile_detail(
     ctx.insert("branch_name", &branch_name);
 
     state.render("tiles/detail.html", &ctx)
+}
+
+// ── GET /tiles/:id/card — mini card partial for dialog ───────────────────────
+
+async fn tile_card(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(tile_id): Path<i64>,
+) -> Result<impl IntoResponse, AppError> {
+    let tile = sqlx::query_as!(
+        TileRow,
+        r#"
+        SELECT
+            t.id, t.branch_id, t.item_number, t.collection, t.gts_description,
+            t.new_bin, t.qty, t.overflow_rack, t.order_number, t.notes,
+            t.sample_coordinator_id, t.sales_rep_id, t.low_inventory_threshold,
+            t.created_at, t.updated_at,
+            c.name AS coordinator_name,
+            r.name AS sales_rep_name
+        FROM tiles t
+        LEFT JOIN users c ON t.sample_coordinator_id = c.id
+        LEFT JOIN users r ON t.sales_rep_id = r.id
+        WHERE t.id = ? AND t.branch_id = ?
+        "#,
+        tile_id,
+        auth.branch_id
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound)?;
+
+    let now = Utc::now();
+    let health = tile_health(tile.qty, tile.low_inventory_threshold);
+    let tile_view = tile_view_from(&tile, None, &health, now);
+
+    let mut ctx = Context::new();
+    ctx.insert("tile", &tile_view);
+    ctx.insert("auth_user_role", auth.role.as_str());
+
+    state.render("tiles/card.html", &ctx)
 }
 
 // ── PUT /tiles/:id — update qty / notes / assignments ────────────────────────

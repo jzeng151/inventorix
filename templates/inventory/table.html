@@ -34,7 +34,7 @@
   <button class="health-chip js-filter-clear" style="display:none">× clear filter</button>
 </div>
 
-<!-- WebSocket disconnect banner (shown by JS when WS drops — Lane C) -->
+<!-- WebSocket disconnect banner -->
 <div class="ws-banner" id="ws-banner" role="status" aria-live="polite">
   ⚠ Real-time updates paused — reconnecting...
 </div>
@@ -48,7 +48,7 @@
 </div>
 
 {% else %}
-<div class="table-wrap">
+<div class="table-wrap" id="table-wrap">
   <table class="inventory" role="grid" id="inventory-table" aria-label="Tile inventory">
     <thead>
       <tr>
@@ -71,8 +71,49 @@
 </div>
 {% endif %}
 
+<!-- ── Branch chat sidebar ────────────────────────────────────────────────────── -->
+<aside class="chat-sidebar" id="chat-sidebar" aria-label="Branch chat">
+  <div class="chat-sidebar__header">
+    <span class="chat-sidebar__label">{{ branch_name }} Chat</span>
+    <button class="chat-sidebar__close" id="chat-sidebar-close" aria-label="Close chat panel">✕</button>
+  </div>
+
+  <div class="chat-sidebar__messages" id="chat-sidebar-messages" aria-live="polite">
+    <p class="chat-sidebar__hint">Loading…</p>
+  </div>
+
+  <form class="chat-sidebar__compose" id="chat-sidebar-form" aria-label="Send message">
+    <input type="text" id="chat-sidebar-input"
+           class="form-input chat-sidebar__input"
+           placeholder="Message… mention an item # to flag it" autocomplete="off" maxlength="1000">
+    <button type="submit" class="btn btn--primary btn--sm">Send</button>
+  </form>
+</aside>
+
+<!-- Chat toggle button (fixed, bottom-right) -->
+<button class="chat-toggle-btn" id="chat-toggle-btn"
+        aria-label="Open chat panel" aria-expanded="false">
+  <svg class="chat-toggle-icon" viewBox="0 0 24 24" fill="none"
+       stroke="currentColor" stroke-width="2" stroke-linecap="round"
+       stroke-linejoin="round" aria-hidden="true">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </svg>
+  <span class="chat-badge" id="chat-badge" aria-live="polite" aria-label="0 unread messages">0</span>
+</button>
+
+
 <script>
 (function () {
+  const AUTH_ROLE      = '{{ auth_user_role }}';
+  const AUTH_USER_NAME = '{{ auth_user_name }}';
+
+  // ── Escape helper ─────────────────────────────────────────────────────────
+  function esc(s) {
+    return String(s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
   // ── Client-side search filter ─────────────────────────────────────────────
   const cols = {
     item:       { input: document.getElementById('search-item'),       index: 0 },
@@ -85,8 +126,7 @@
 
   function applyFilters() {
     const terms = Object.values(cols).map(c => c.input.value.toLowerCase().trim());
-    const rows = document.querySelectorAll('#inventory-body tr');
-    rows.forEach(row => {
+    document.querySelectorAll('#inventory-body tr').forEach(row => {
       const cells = row.querySelectorAll('td');
       const textMatch = Object.values(cols).every((c, i) => {
         if (!terms[i]) return true;
@@ -126,15 +166,15 @@
     applyFilters();
   });
 
-  // ── Keyboard nav: Enter on row opens tile detail ──────────────────────────
+  // ── Keyboard nav on rows ──────────────────────────────────────────────────
   document.querySelectorAll('#inventory-body tr').forEach(row => {
     row.addEventListener('keydown', e => {
       if (e.key === 'Enter') row.click();
     });
   });
 
-  // ── Column sort ────────────────────────────────────────────────────────────
-  const NUMERIC_COLS = new Set([3]); // QTY column is numeric
+  // ── Column sort ───────────────────────────────────────────────────────────
+  const NUMERIC_COLS = new Set([3]);
   let sortCol = null, sortDir = 'asc';
 
   function cellKey(cell, colIdx) {
@@ -143,37 +183,26 @@
       const n = parseFloat(raw);
       return isNaN(n) ? -Infinity : n;
     }
-    // Sort blanks and em-dashes to the end on ascending, start on descending
     if (!raw || raw === '—') return '\u{10FFFF}';
     return raw.toLowerCase();
   }
 
   function sortTable(colIdx) {
-    if (sortCol === colIdx) {
-      sortDir = sortDir === 'asc' ? 'desc' : 'asc';
-    } else {
-      sortCol = colIdx;
-      sortDir = 'asc';
-    }
+    sortDir = sortCol === colIdx && sortDir === 'asc' ? 'desc' : 'asc';
+    sortCol = colIdx;
 
     const tbody = document.getElementById('inventory-body');
     const rows = Array.from(tbody.querySelectorAll('tr'));
-
     rows.sort((a, b) => {
       const ka = cellKey(a.querySelectorAll('td')[colIdx], colIdx);
       const kb = cellKey(b.querySelectorAll('td')[colIdx], colIdx);
-      let cmp;
-      if (typeof ka === 'number' && typeof kb === 'number') {
-        cmp = ka - kb;
-      } else {
-        cmp = String(ka).localeCompare(String(kb), undefined, { numeric: true, sensitivity: 'base' });
-      }
+      let cmp = typeof ka === 'number' && typeof kb === 'number'
+        ? ka - kb
+        : String(ka).localeCompare(String(kb), undefined, { numeric: true, sensitivity: 'base' });
       return sortDir === 'asc' ? cmp : -cmp;
     });
-
     rows.forEach(row => tbody.appendChild(row));
 
-    // Update aria-sort and icon on every header
     document.querySelectorAll('table.inventory thead th[data-col]').forEach(th => {
       const isActive = parseInt(th.dataset.col) === colIdx;
       th.setAttribute('aria-sort', isActive ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none');
@@ -187,7 +216,185 @@
     th.addEventListener('click', () => sortTable(parseInt(th.dataset.col)));
   });
 
-  // ── WebSocket: live qty updates + disconnect banner ───────────────────────
+  // ── Chat sidebar ──────────────────────────────────────────────────────────
+  const sidebar      = document.getElementById('chat-sidebar');
+  const toggleBtn    = document.getElementById('chat-toggle-btn');
+  const badge        = document.getElementById('chat-badge');
+  const messagesEl   = document.getElementById('chat-sidebar-messages');
+  const composeForm  = document.getElementById('chat-sidebar-form');
+  const composeInput = document.getElementById('chat-sidebar-input');
+
+  let sidebarOpen   = false;
+  let historyLoaded = false;
+  let unreadCount   = 0;
+  // Tracks messages we sent ourselves so we can skip the WS echo (prevents duplicate render)
+  const pendingSent = new Set();
+
+  // Item # detection regex — uppercase alphanumeric segments joined by hyphen
+  const ITEM_RE = /\b([A-Z][A-Z0-9]*-[A-Z0-9]+)\b/g;
+
+  function setBadge(n) {
+    unreadCount = n;
+    badge.textContent = n > 99 ? '99+' : String(n);
+    badge.classList.toggle('chat-badge--visible', n > 0);
+    badge.setAttribute('aria-label', n + ' unread message' + (n === 1 ? '' : 's'));
+    toggleBtn.setAttribute('aria-label',
+      n > 0 ? 'Open chat (' + n + ' new)' : 'Open chat panel');
+  }
+
+  /** Render a chat message div with clickable item # buttons. */
+  function renderMessage(senderName, role, message) {
+    const escapedMsg = esc(message);
+    ITEM_RE.lastIndex = 0;
+    const withRefs = escapedMsg.replace(ITEM_RE, (_, item) =>
+      '<button class="chat-item-ref" data-item="' + esc(item) + '">' + esc(item) + '</button>'
+    );
+    const div = document.createElement('div');
+    div.className = 'chat-msg';
+    div.setAttribute('data-role', role || '');
+    div.innerHTML =
+      '<span class="chat-msg__meta"><strong>' + esc(senderName) + '</strong></span>' +
+      '<p class="chat-msg__body">' + withRefs + '</p>';
+    return div;
+  }
+
+  /** Walk existing .chat-msg__body elements and linkify item numbers. */
+  function detectItemRefs(container) {
+    container.querySelectorAll('.chat-msg__body').forEach(p => {
+      ITEM_RE.lastIndex = 0;
+      if (!ITEM_RE.test(p.textContent)) return;
+      ITEM_RE.lastIndex = 0;
+      p.innerHTML = p.innerHTML.replace(ITEM_RE, (_, item) =>
+        '<button class="chat-item-ref" data-item="' + item + '">' + item + '</button>'
+      );
+    });
+  }
+
+  function loadHistory() {
+    messagesEl.innerHTML = '<p class="chat-sidebar__hint">Loading…</p>';
+    fetch('/chat')
+      .then(r => r.ok ? r.text() : null)
+      .then(html => {
+        if (html && html.trim()) {
+          messagesEl.innerHTML = html;
+          detectItemRefs(messagesEl);
+        } else {
+          messagesEl.innerHTML = '<p class="chat-sidebar__hint">No messages in the last 7 days.</p>';
+        }
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+        historyLoaded = true;
+      })
+      .catch(() => {
+        messagesEl.innerHTML = '<p class="chat-sidebar__hint">Could not load history.</p>';
+      });
+  }
+
+  function appendToMessages(div) {
+    messagesEl.querySelector('.chat-sidebar__hint')?.remove();
+    messagesEl.appendChild(div);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function openSidebar() {
+    sidebar.classList.add('chat-sidebar--open');
+    document.body.classList.add('sidebar-open');
+    toggleBtn.setAttribute('aria-expanded', 'true');
+    sidebarOpen = true;
+    setBadge(0);
+    if (!historyLoaded) {
+      loadHistory();
+    } else {
+      // Scroll to bottom to reveal any messages that arrived while closed
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+    composeInput?.focus();
+  }
+
+  function closeSidebar() {
+    sidebar.classList.remove('chat-sidebar--open');
+    document.body.classList.remove('sidebar-open');
+    toggleBtn.setAttribute('aria-expanded', 'false');
+    sidebarOpen = false;
+  }
+
+  // Expose for row onclick
+  window.openChatFor = function (_tileId, _tileName) {
+    openSidebar();
+  };
+
+  toggleBtn.addEventListener('click', () => {
+    sidebarOpen ? closeSidebar() : openSidebar();
+  });
+
+  document.getElementById('chat-sidebar-close').addEventListener('click', closeSidebar);
+
+  // Send message
+  composeForm.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    const msg = composeInput.value.trim();
+    if (!msg) return;
+    const btn = this.querySelector('button[type=submit]');
+    btn.disabled = true;
+    // Register before await so the WS echo (which can arrive while the fetch
+    // is in-flight) is recognised as our own message and skipped.
+    pendingSent.add(msg);
+    try {
+      const res = await fetch('/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'message=' + encodeURIComponent(msg),
+      });
+      if (res.ok) {
+        composeInput.value = '';
+        appendToMessages(renderMessage(AUTH_USER_NAME, AUTH_ROLE, msg));
+      } else {
+        pendingSent.delete(msg); // send failed — undo dedup registration
+      }
+    } catch {
+      pendingSent.delete(msg); // network error — undo dedup registration
+    } finally {
+      btn.disabled = false;
+      composeInput.focus();
+    }
+  });
+
+  // ── Copy item # to clipboard ──────────────────────────────────────────────
+  function showCopiedTip(x, y) {
+    const tip = document.createElement('span');
+    tip.textContent = 'Copied!';
+    tip.style.cssText =
+      'position:fixed;background:#1F2937;color:#fff;font-size:11px;padding:2px 7px;' +
+      'border-radius:4px;pointer-events:none;white-space:nowrap;z-index:999;';
+    document.body.appendChild(tip);
+    tip.style.left = (x - tip.offsetWidth / 2) + 'px';
+    tip.style.top  = (y - tip.offsetHeight - 8) + 'px';
+    setTimeout(() => tip.remove(), 1200);
+  }
+
+  window.copyItemNumber = function (itemNumber, e) {
+    const x = e.clientX, y = e.clientY;
+    navigator.clipboard.writeText(itemNumber).then(function () {
+      showCopiedTip(x, y);
+    }).catch(function () {
+      const el = document.createElement('textarea');
+      el.value = itemNumber;
+      el.style.cssText = 'position:fixed;opacity:0';
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      el.remove();
+      showCopiedTip(x, y);
+    });
+  };
+
+  // Delegate clicks on item # reference buttons in the sidebar
+  messagesEl.addEventListener('click', function (e) {
+    const btn = e.target.closest('.chat-item-ref');
+    if (!btn) return;
+    copyItemNumber(btn.dataset.item, e);
+  });
+
+  // ── WebSocket ─────────────────────────────────────────────────────────────
   (function () {
     const WS_URL = (location.protocol === 'https:' ? 'wss' : 'ws') + '://' + location.host + '/ws';
     const banner = document.getElementById('ws-banner');
@@ -203,20 +410,31 @@
 
       ws.onmessage = function (e) {
         try {
-          const event = JSON.parse(e.data);
-          if (event.type === 'inventory_update') {
-            const row = document.getElementById('tile-row-' + event.tile_id);
+          const ev = JSON.parse(e.data);
+
+          if (ev.type === 'inventory_update') {
+            const row = document.getElementById('tile-row-' + ev.tile_id);
             if (!row) return;
-            const badge = row.querySelector('.badge');
-            if (badge) {
-              // Update qty text (first text node inside badge, before the dot span)
-              badge.childNodes.forEach(function (node) {
-                if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
-                  node.textContent = ' ' + event.new_qty + ' ';
-                }
+            const bdg = row.querySelector('.badge');
+            if (bdg) {
+              bdg.childNodes.forEach(node => {
+                if (node.nodeType === Node.TEXT_NODE && node.textContent.trim())
+                  node.textContent = ' ' + ev.new_qty + ' ';
               });
             }
           }
+
+          if (ev.type === 'chat_message') {
+            // Skip WS echo for messages we just sent (already rendered optimistically)
+            if (ev.sender_name === AUTH_USER_NAME && pendingSent.has(ev.message)) {
+              pendingSent.delete(ev.message);
+            } else {
+              // Always append to DOM — even when sidebar is closed — so reopening shows them
+              appendToMessages(renderMessage(ev.sender_name, ev.role, ev.message));
+              if (!sidebarOpen) setBadge(unreadCount + 1);
+            }
+          }
+
         } catch (_) {}
       };
 
@@ -229,6 +447,7 @@
 
     connect();
   })();
+
 })();
 </script>
 {% endblock %}

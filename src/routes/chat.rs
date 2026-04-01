@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State, WebSocketUpgrade},
+    extract::{State, WebSocketUpgrade},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
@@ -11,7 +11,7 @@ use tera::Context;
 use tokio::io::AsyncWriteExt;
 
 use crate::{
-    auth::extractor::{AuthUser, Role},
+    auth::extractor::AuthUser,
     ws::manager::WsEvent,
     AppError, AppState,
 };
@@ -19,8 +19,8 @@ use crate::{
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/ws", get(ws_handler))
-        .route("/tiles/{id}/chat", post(send_chat))
-        .route("/tiles/{id}/chat", get(chat_history))
+        .route("/chat", post(send_chat))
+        .route("/chat", get(chat_history))
 }
 
 // ── WebSocket upgrade ─────────────────────────────────────────────────────────
@@ -46,13 +46,12 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, auth: AuthUser) {
             }
         };
         if socket.send(Message::Text(json.into())).await.is_err() {
-            // Client disconnected — sender is cleaned up on next broadcast attempt
             break;
         }
     }
 }
 
-// ── Chat send ─────────────────────────────────────────────────────────────────
+// ── Global branch chat — send ─────────────────────────────────────────────────
 
 #[derive(Deserialize)]
 struct ChatForm {
@@ -62,19 +61,8 @@ struct ChatForm {
 async fn send_chat(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(tile_id): Path<i64>,
     Form(form): Form<ChatForm>,
 ) -> Result<impl IntoResponse, AppError> {
-    // Branch isolation
-    sqlx::query!(
-        "SELECT id FROM tiles WHERE id = ? AND branch_id = ?",
-        tile_id,
-        auth.branch_id
-    )
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::NotFound)?;
-
     let message = form.message.trim().to_string();
     if message.is_empty() {
         return Err(AppError::ValidationError("Message cannot be empty".into()));
@@ -87,7 +75,6 @@ async fn send_chat(
 
     write_chat_log(
         &state.config.chat_log_path,
-        tile_id,
         auth.branch_id,
         auth.id,
         &auth.name,
@@ -99,8 +86,8 @@ async fn send_chat(
     state.ws_manager.broadcast(
         auth.branch_id,
         WsEvent::ChatMessage {
-            tile_id,
             sender_name: auth.name,
+            role: auth.role.as_str().to_string(),
             message,
         },
     );
@@ -108,7 +95,7 @@ async fn send_chat(
     Ok(StatusCode::NO_CONTENT)
 }
 
-// ── Admin chat history ────────────────────────────────────────────────────────
+// ── Global branch chat — history ──────────────────────────────────────────────
 
 #[derive(Serialize)]
 struct ChatEntry {
@@ -121,27 +108,11 @@ struct ChatEntry {
 async fn chat_history(
     State(state): State<AppState>,
     auth: AuthUser,
-    Path(tile_id): Path<i64>,
 ) -> Result<impl IntoResponse, AppError> {
-    if auth.role != Role::Admin {
-        return Err(AppError::Forbidden);
-    }
-
-    // Branch isolation
-    sqlx::query!(
-        "SELECT id FROM tiles WHERE id = ? AND branch_id = ?",
-        tile_id,
-        auth.branch_id
-    )
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::NotFound)?;
-
-    let messages = read_tile_chat(&state.config.chat_log_path, tile_id).await;
+    let messages = read_branch_chat(&state.config.chat_log_path, auth.branch_id).await;
 
     let mut ctx = Context::new();
     ctx.insert("messages", &messages);
-    ctx.insert("tile_id", &tile_id);
 
     state.render("tiles/chat-messages.html", &ctx)
 }
@@ -150,7 +121,6 @@ async fn chat_history(
 
 async fn write_chat_log(
     log_dir: &str,
-    tile_id: i64,
     branch_id: i64,
     user_id: i64,
     user_name: &str,
@@ -168,7 +138,7 @@ async fn write_chat_log(
 
     let entry = serde_json::json!({
         "ts": chrono::Utc::now().to_rfc3339(),
-        "tile_id": tile_id,
+        "tile_id": null,
         "branch_id": branch_id,
         "user_id": user_id,
         "user_name": user_name,
@@ -193,9 +163,9 @@ async fn write_chat_log(
     Ok(())
 }
 
-/// Reads chat entries for a tile from the last 7 days of log files.
+/// Reads all chat entries for a branch from the last 7 days of log files.
 /// Returns up to 100 entries in chronological order.
-async fn read_tile_chat(log_dir: &str, tile_id: i64) -> Vec<ChatEntry> {
+async fn read_branch_chat(log_dir: &str, branch_id: i64) -> Vec<ChatEntry> {
     let mut entries: Vec<(String, ChatEntry)> = Vec::new();
 
     for days_ago in (0i64..7).rev() {
@@ -211,7 +181,7 @@ async fn read_tile_chat(log_dir: &str, tile_id: i64) -> Vec<ChatEntry> {
             let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
                 continue;
             };
-            if v["tile_id"].as_i64() != Some(tile_id) {
+            if v["branch_id"].as_i64() != Some(branch_id) {
                 continue;
             }
             let ts = v["ts"].as_str().unwrap_or("").to_string();
@@ -240,14 +210,13 @@ pub async fn purge_old_chat_logs(log_dir: &str) {
         .date_naive();
 
     let Ok(mut dir) = tokio::fs::read_dir(log_dir).await else {
-        return; // directory doesn't exist yet — nothing to purge
+        return;
     };
 
     while let Ok(Some(entry)) = dir.next_entry().await {
         let name = entry.file_name();
         let Some(name_str) = name.to_str() else { continue };
 
-        // Match "chat-YYYY-MM-DD.log"
         let Some(date_str) = name_str
             .strip_prefix("chat-")
             .and_then(|s| s.strip_suffix(".log"))
