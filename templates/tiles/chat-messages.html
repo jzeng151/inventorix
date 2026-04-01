@@ -4,9 +4,13 @@
 </p>
 {% else %}
 {% for msg in messages %}
+{% if msg.show_date_sep %}
+<div class="chat-date-sep">{{ msg.date_str }}</div>
+{% endif %}
 <div class="chat-msg" data-role="{{ msg.role }}">
   <span class="chat-msg__meta">
     <strong>{{ msg.user_name }}</strong>
+    <time class="chat-msg__time" data-ts="{{ msg.ts }}">{{ msg.time_str }}</time>
   </span>
   <p class="chat-msg__body">{{ msg.message }}</p>
 </div>

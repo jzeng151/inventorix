@@ -5,9 +5,24 @@
     data-tile-name="{{ tile.item_number }}"
     onclick="copyItemNumber(this.dataset.tileName, event)"
     style="cursor:pointer">
-  <td>{{ tile.item_number }}</td>
-  <td>{{ tile.collection | default(value="—") }}</td>
-  <td>{{ tile.new_bin | default(value="—") }}</td>
+  <td class="item-cell" title="{{ tile.item_number }}">
+    <div class="item-cell__inner">
+      <button class="btn-cart-add" title="Add to cart"
+              aria-label="Add {{ tile.item_number }} to cart"
+              onclick="event.stopPropagation(); cartAdd('{{ tile.item_number }}')">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="5.5" cy="13.5" r="1"/><circle cx="11.5" cy="13.5" r="1"/>
+          <path d="M1 1.5h2l1.6 7.5h7l1.4-5H4.5"/>
+          <path d="M8 4v4M6 6h4"/>
+        </svg>
+      </button>
+      <span class="item-cell__name">{{ tile.item_number }}</span>
+    </div>
+  </td>
+  <td title="{{ tile.collection | default(value='') }}">{{ tile.collection | default(value="—") }}</td>
+  <td title="{{ tile.gts_description | default(value='') }}">{{ tile.gts_description | default(value="—") }}</td>
+  <td title="{{ tile.new_bin | default(value='') }}">{{ tile.new_bin | default(value="—") }}</td>
   <td>
     <span class="badge badge--{{ tile.health }}"
           aria-label="{{ tile.health | title }}: {{ tile.qty }} in stock">
@@ -15,18 +30,28 @@
       <span class="badge__dot" aria-hidden="true"></span>
     </span>
   </td>
-  <td>{{ tile.coordinator_name | default(value="—") }}</td>
-  <td>{{ tile.sales_rep_name | default(value="—") }}</td>
   <td>
     {% if auth_user_role == "coordinator" or auth_user_role == "admin" %}
       {% if tile.refill_status == "pending" %}
-        <span class="btn btn--amber-fill" aria-label="Refill pending: {{ tile.refill_countdown | default(value='') }} remaining">
+        <span class="btn btn--amber-fill" aria-label="Refill pending: active for {{ tile.refill_countdown | default(value='') }}">
           ⏱ {{ tile.refill_countdown | default(value="—") }}
         </span>
       {% elif tile.refill_status == "approved" %}
-        <span class="refill-badge refill-badge--approved">Approved ✓</span>
+        <span class="refill-badge refill-badge--approved"
+              title="Approved by {{ tile.refill_approved_by | default(value='unknown') }}{% if tile.refill_approved_at %} on {{ tile.refill_approved_at }}{% endif %}">Approved ✓</span>
+        <button class="btn btn--amber-outline btn--sm"
+                onclick="event.stopPropagation()"
+                hx-post="/tiles/{{ tile.id }}/refill"
+                hx-vals='{"qty": "1"}'
+                hx-swap="none"
+                title="Request additional stock">+ Request More</button>
       {% elif tile.refill_status == "fulfilled" %}
         <span class="refill-badge refill-badge--fulfilled">Fulfilled</span>
+        <button class="btn btn--amber-outline btn--sm"
+                onclick="event.stopPropagation()"
+                hx-post="/tiles/{{ tile.id }}/refill"
+                hx-vals='{"qty": "1"}'
+                hx-swap="none">Request Refill</button>
       {% else %}
         <button class="btn btn--amber-outline"
                 onclick="event.stopPropagation()"
@@ -34,17 +59,12 @@
                 hx-vals='{"qty": "1"}'
                 hx-swap="none">Request Refill</button>
       {% endif %}
-    {% elif auth_user_role == "sales_rep" %}
-      {% if tile.refill_status == "pending" and tile.refill_id %}
+    {% endif %}
+    {% if auth_user_role == "admin" and tile.refill_status == "pending" and tile.refill_id %}
         <button class="btn btn--blue-outline"
                 onclick="event.stopPropagation()"
                 hx-post="/refill/{{ tile.refill_id }}/approve"
                 hx-swap="none">Approve</button>
-      {% elif tile.refill_status == "approved" %}
-        <span class="refill-badge refill-badge--approved">Approved ✓</span>
-      {% elif tile.refill_status == "fulfilled" %}
-        <span class="refill-badge refill-badge--fulfilled">Fulfilled</span>
-      {% endif %}
     {% endif %}
   </td>
   <td title="{{ tile.notes | default(value='') }}">

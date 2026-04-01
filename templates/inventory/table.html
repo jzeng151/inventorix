@@ -8,6 +8,7 @@
   <input id="search-collection" type="search" class="form-input subbar__search" placeholder="Collection">
   <input id="search-bin"        type="search" class="form-input subbar__search" placeholder="Bin">
   <input id="search-notes"      type="search" class="form-input subbar__search" placeholder="Notes">
+  <button type="button" id="clear-search-btn" class="btn btn--secondary btn--sm" style="display:none" aria-label="Clear search">✕ Clear</button>
   <div class="subbar__spacer"></div>
   <a href="/import" class="btn btn--secondary">Import</a>
   <form method="post" action="/export" style="display:inline">
@@ -54,12 +55,11 @@
       <tr>
         <th scope="col" class="sortable" data-col="0" aria-sort="none">ITEM # <span class="sort-icon" aria-hidden="true">↕</span></th>
         <th scope="col" class="sortable" data-col="1" aria-sort="none">COLLECTION <span class="sort-icon" aria-hidden="true">↕</span></th>
-        <th scope="col" class="sortable" data-col="2" aria-sort="none">NEW BIN <span class="sort-icon" aria-hidden="true">↕</span></th>
-        <th scope="col" class="sortable" data-col="3" aria-sort="none">QTY <span class="sort-icon" aria-hidden="true">↕</span></th>
-        <th scope="col" class="sortable" data-col="4" aria-sort="none">COORDINATOR <span class="sort-icon" aria-hidden="true">↕</span></th>
-        <th scope="col" class="sortable" data-col="5" aria-sort="none">SALES REP <span class="sort-icon" aria-hidden="true">↕</span></th>
-        <th scope="col" class="sortable" data-col="6" aria-sort="none">REFILL STATUS <span class="sort-icon" aria-hidden="true">↕</span></th>
-        <th scope="col" class="sortable" data-col="7" aria-sort="none">NOTES <span class="sort-icon" aria-hidden="true">↕</span></th>
+        <th scope="col" class="sortable" data-col="2" aria-sort="none">GTS DESCRIPTION <span class="sort-icon" aria-hidden="true">↕</span></th>
+        <th scope="col" class="sortable" data-col="3" aria-sort="none">NEW BIN <span class="sort-icon" aria-hidden="true">↕</span></th>
+        <th scope="col" class="sortable" data-col="4" aria-sort="none">QTY <span class="sort-icon" aria-hidden="true">↕</span></th>
+        <th scope="col" class="sortable" data-col="5" aria-sort="none">REFILL STATUS <span class="sort-icon" aria-hidden="true">↕</span></th>
+        <th scope="col" class="sortable" data-col="6" aria-sort="none">NOTES <span class="sort-icon" aria-hidden="true">↕</span></th>
       </tr>
     </thead>
     <tbody id="inventory-body">
@@ -70,6 +70,9 @@
   </table>
 </div>
 {% endif %}
+
+<!-- Toast notifications -->
+<div class="toast-container" id="toast-container"></div>
 
 <!-- ── Branch chat sidebar ────────────────────────────────────────────────────── -->
 <aside class="chat-sidebar" id="chat-sidebar" aria-label="Branch chat">
@@ -89,6 +92,36 @@
     <button type="submit" class="btn btn--primary btn--sm">Send</button>
   </form>
 </aside>
+
+<!-- Cart panel -->
+<div class="cart-panel" id="cart-panel" style="display:none">
+  <div class="cart-panel__header">
+    <span class="cart-panel__title">Sample Cart</span>
+    <button class="cart-panel__close" id="cart-panel-close" aria-label="Close cart">✕</button>
+  </div>
+  <ul class="cart-panel__items" id="cart-panel-items" aria-live="polite">
+    <li class="cart-empty">No items added yet.</li>
+  </ul>
+  <div class="cart-panel__footer">
+    <button class="btn btn--primary btn--sm" id="cart-send-btn" disabled>Send to Chat</button>
+    <button class="btn btn--ghost btn--sm" id="cart-clear-btn">Clear</button>
+  </div>
+</div>
+
+<!-- Cart toggle button (fixed, bottom-left) -->
+<button class="cart-toggle-btn" id="cart-toggle-btn" aria-label="Open sample cart" aria-expanded="false" hidden>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+       stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
+    <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/>
+  </svg>
+  <span class="cart-badge" id="cart-badge" hidden>0</span>
+</button>
+
+<!-- Tile card dialog (opened when coordinator clicks an item # in chat) -->
+<dialog id="tile-card-dialog" aria-modal="true" aria-label="Sample detail">
+  <div id="tile-card-content"></div>
+</dialog>
 
 <!-- Chat toggle button (fixed, bottom-right) -->
 <button class="chat-toggle-btn" id="chat-toggle-btn"
@@ -115,30 +148,78 @@
   }
 
   // ── Client-side search filter ─────────────────────────────────────────────
-  const cols = {
-    item:       { input: document.getElementById('search-item'),       index: 0 },
-    collection: { input: document.getElementById('search-collection'), index: 1 },
-    bin:        { input: document.getElementById('search-bin'),        index: 2 },
-    notes:      { input: document.getElementById('search-notes'),      index: 7 },
-  };
+  const searchItem       = document.getElementById('search-item');
+  const searchCollection = document.getElementById('search-collection');
+  const searchBin        = document.getElementById('search-bin');
+  const searchNotes      = document.getElementById('search-notes');
+
+  // Pre-cache each row's searchable text and health at page load to avoid
+  // repeated DOM reads (textContent + querySelectorAll) on every filter call.
+  const rowCache = Array.from(document.querySelectorAll('#inventory-body tr')).map(function (row) {
+    const cells = row.querySelectorAll('td');
+    return {
+      el:         row,
+      health:     row.className.split(' ').find(function (c) { return c.startsWith('row--'); })?.slice(5) ?? '',
+      item:       (cells[0]?.textContent ?? '').toLowerCase(),
+      collection: (cells[1]?.textContent ?? '').toLowerCase(),
+      bin:        (cells[3]?.textContent ?? '').toLowerCase(),
+      notes:      (cells[6]?.textContent ?? '').toLowerCase(),
+    };
+  });
 
   const activeHealthFilters = new Set();
+  let filterRaf = null;
 
   function applyFilters() {
-    const terms = Object.values(cols).map(c => c.input.value.toLowerCase().trim());
-    document.querySelectorAll('#inventory-body tr').forEach(row => {
-      const cells = row.querySelectorAll('td');
-      const textMatch = Object.values(cols).every((c, i) => {
-        if (!terms[i]) return true;
-        return (cells[c.index]?.textContent ?? '').toLowerCase().includes(terms[i]);
-      });
-      const healthMatch = activeHealthFilters.size === 0 ||
-        [...activeHealthFilters].some(f => row.classList.contains('row--' + f));
-      row.style.display = textMatch && healthMatch ? '' : 'none';
+    const tItem       = searchItem.value.toLowerCase().trim();
+    const tCollection = searchCollection.value.toLowerCase().trim();
+    const tBin        = searchBin.value.toLowerCase().trim();
+    const tNotes      = searchNotes.value.toLowerCase().trim();
+    const hasHealth   = activeHealthFilters.size > 0;
+
+    if (filterRaf) cancelAnimationFrame(filterRaf);
+    filterRaf = requestAnimationFrame(function () {
+      for (var i = 0; i < rowCache.length; i++) {
+        var r = rowCache[i];
+        var textMatch =
+          (!tItem       || r.item.includes(tItem)) &&
+          (!tCollection || r.collection.includes(tCollection)) &&
+          (!tBin        || r.bin.includes(tBin)) &&
+          (!tNotes      || r.notes.includes(tNotes));
+        var healthMatch = !hasHealth || activeHealthFilters.has(r.health);
+        r.el.style.display = textMatch && healthMatch ? '' : 'none';
+      }
     });
   }
 
-  Object.values(cols).forEach(c => c.input.addEventListener('input', applyFilters));
+  const clearSearchBtn = document.getElementById('clear-search-btn');
+
+  function syncClearBtn() {
+    var hasText = searchItem.value || searchCollection.value || searchBin.value || searchNotes.value;
+    clearSearchBtn.style.display = hasText ? '' : 'none';
+  }
+
+  // Debounce text input — avoids filtering on every keystroke during fast typing.
+  var debounceTimer = null;
+  function onSearchInput() {
+    syncClearBtn();
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(applyFilters, 120);
+  }
+
+  searchItem.addEventListener('input', onSearchInput);
+  searchCollection.addEventListener('input', onSearchInput);
+  searchBin.addEventListener('input', onSearchInput);
+  searchNotes.addEventListener('input', onSearchInput);
+
+  clearSearchBtn.addEventListener('click', function () {
+    searchItem.value = searchCollection.value = searchBin.value = searchNotes.value = '';
+    applyFilters();
+    syncClearBtn();
+  });
+
+  // Show clear button immediately if any input already has a value (e.g. browser autofill)
+  syncClearBtn();
 
   // ── Health chip filter ────────────────────────────────────────────────────
   function syncChipUI() {
@@ -174,7 +255,7 @@
   });
 
   // ── Column sort ───────────────────────────────────────────────────────────
-  const NUMERIC_COLS = new Set([3]);
+  const NUMERIC_COLS = new Set([4]);
   let sortCol = null, sortDir = 'asc';
 
   function cellKey(cell, colIdx) {
@@ -231,7 +312,7 @@
   const pendingSent = new Set();
 
   // Item # detection regex — uppercase alphanumeric segments joined by hyphen
-  const ITEM_RE = /\b([A-Z][A-Z0-9]*-[A-Z0-9]+)\b/g;
+  const ITEM_RE = /\b([A-Z][A-Z0-9]* ?-[A-Z0-9]+(?:\s+[A-Z0-9]+)*)\b/g;
 
   function setBadge(n) {
     unreadCount = n;
@@ -242,8 +323,33 @@
       n > 0 ? 'Open chat (' + n + ' new)' : 'Open chat panel');
   }
 
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  function fmtTime(date) {
+    const h24 = date.getHours(), m = date.getMinutes();
+    const h12 = h24 % 12 || 12;
+    const ampm = h24 >= 12 ? 'PM' : 'AM';
+    return h12 + ':' + String(m).padStart(2, '0') + ' ' + ampm;
+  }
+
+  function fmtDateKey(date) {
+    // YYYY-MM-DD — used only for change detection
+    return date.getFullYear() + '-' +
+      String(date.getMonth() + 1).padStart(2, '0') + '-' +
+      String(date.getDate()).padStart(2, '0');
+  }
+
+  function fmtDateLabel(date) {
+    return MONTHS[date.getMonth()] + ' ' + date.getDate() + ', ' + date.getFullYear();
+  }
+
+  // Tracks the date key of the last message appended, so live messages can insert
+  // a date separator when the day rolls over.
+  let lastAppendedDateKey = null;
+
   /** Render a chat message div with clickable item # buttons. */
-  function renderMessage(senderName, role, message) {
+  function renderMessage(senderName, role, message, date) {
+    const now = date || new Date();
     const escapedMsg = esc(message);
     ITEM_RE.lastIndex = 0;
     const withRefs = escapedMsg.replace(ITEM_RE, (_, item) =>
@@ -252,10 +358,21 @@
     const div = document.createElement('div');
     div.className = 'chat-msg';
     div.setAttribute('data-role', role || '');
+    div.setAttribute('data-date-key', fmtDateKey(now));
     div.innerHTML =
-      '<span class="chat-msg__meta"><strong>' + esc(senderName) + '</strong></span>' +
+      '<span class="chat-msg__meta"><strong>' + esc(senderName) + '</strong>' +
+        '<time class="chat-msg__time">' + fmtTime(now) + '</time>' +
+      '</span>' +
       '<p class="chat-msg__body">' + withRefs + '</p>';
     return div;
+  }
+
+  /** Reformat server-rendered UTC timestamps to the browser's local time. */
+  function localizeTimestamps(container) {
+    container.querySelectorAll('time[data-ts]').forEach(function (el) {
+      const d = new Date(el.dataset.ts);
+      if (!isNaN(d)) el.textContent = fmtTime(d);
+    });
   }
 
   /** Walk existing .chat-msg__body elements and linkify item numbers. */
@@ -270,18 +387,53 @@
     });
   }
 
+  /** Replace a .chat-item-ref button with the strikethrough "handled by" span. */
+  function markItemHandled(btn, handledByName) {
+    const span = document.createElement('span');
+    span.className = 'chat-item-handled';
+    span.innerHTML = '<s>' + esc(btn.dataset.item) + '</s> handled by ' + esc(handledByName);
+    btn.replaceWith(span);
+  }
+
+  /**
+   * Fetch the list of handled items from the server and apply strikethrough
+   * to any matching .chat-item-ref buttons in the given container.
+   */
+  async function applyHandledItems(container) {
+    try {
+      const res = await fetch('/chat/handled');
+      if (!res.ok) return;
+      const items = await res.json(); // [{item_number, handled_by_name}]
+      // Build a map for O(1) lookup: item_number → handled_by_name
+      // Last handle wins when the same item was handled multiple times.
+      const handledMap = {};
+      items.forEach(function (h) { handledMap[h.item_number] = h.handled_by_name; });
+      container.querySelectorAll('.chat-item-ref').forEach(function (btn) {
+        const handledBy = handledMap[btn.dataset.item];
+        if (handledBy) markItemHandled(btn, handledBy);
+      });
+    } catch (_) { /* non-fatal */ }
+  }
+
   function loadHistory() {
     messagesEl.innerHTML = '<p class="chat-sidebar__hint">Loading…</p>';
     fetch('/chat')
       .then(r => r.ok ? r.text() : null)
-      .then(html => {
+      .then(async function (html) {
         if (html && html.trim()) {
           messagesEl.innerHTML = html;
+          localizeTimestamps(messagesEl);
           detectItemRefs(messagesEl);
+          await applyHandledItems(messagesEl);
         } else {
           messagesEl.innerHTML = '<p class="chat-sidebar__hint">No messages in the last 7 days.</p>';
         }
         messagesEl.scrollTop = messagesEl.scrollHeight;
+        // Seed the date tracker so the first live message knows today's separator was already shown
+        const lastSep = messagesEl.querySelector('.chat-date-sep:last-of-type');
+        const lastMsg = messagesEl.querySelector('.chat-msg[data-date-key]:last-of-type');
+        if (lastMsg) lastAppendedDateKey = lastMsg.dataset.dateKey;
+        else if (lastSep) lastAppendedDateKey = null;
         historyLoaded = true;
       })
       .catch(() => {
@@ -291,6 +443,15 @@
 
   function appendToMessages(div) {
     messagesEl.querySelector('.chat-sidebar__hint')?.remove();
+    // Insert a date separator when the day changes for live messages
+    const dateKey = div.dataset.dateKey;
+    if (dateKey && dateKey !== lastAppendedDateKey) {
+      const sep = document.createElement('div');
+      sep.className = 'chat-date-sep';
+      sep.textContent = fmtDateLabel(new Date(dateKey + 'T12:00:00'));
+      messagesEl.appendChild(sep);
+      lastAppendedDateKey = dateKey;
+    }
     messagesEl.appendChild(div);
     messagesEl.scrollTop = messagesEl.scrollHeight;
   }
@@ -299,6 +460,7 @@
     sidebar.classList.add('chat-sidebar--open');
     document.body.classList.add('sidebar-open');
     toggleBtn.setAttribute('aria-expanded', 'true');
+    toggleBtn.setAttribute('hidden', '');
     sidebarOpen = true;
     setBadge(0);
     if (!historyLoaded) {
@@ -314,6 +476,7 @@
     sidebar.classList.remove('chat-sidebar--open');
     document.body.classList.remove('sidebar-open');
     toggleBtn.setAttribute('aria-expanded', 'false');
+    toggleBtn.removeAttribute('hidden');
     sidebarOpen = false;
   }
 
@@ -358,7 +521,18 @@
     }
   });
 
-  // ── Copy item # to clipboard ──────────────────────────────────────────────
+// ── Toast notifications ───────────────────────────────────────────────────
+  const toastContainer = document.getElementById('toast-container');
+
+  function showToast(message, type) {
+    const toast = document.createElement('div');
+    toast.className = 'toast toast--' + (type || 'info');
+    toast.textContent = message;
+    toastContainer.appendChild(toast);
+    setTimeout(() => toast.remove(), 5000);
+  }
+
+  // ── Copy item # to clipboard (row clicks) ────────────────────────────────
   function showCopiedTip(x, y) {
     const tip = document.createElement('span');
     tip.textContent = 'Copied!';
@@ -387,12 +561,156 @@
     });
   };
 
+  // ── Tile card dialog (chat item # clicks) ─────────────────────────────────
+  const tileCardDialog  = document.getElementById('tile-card-dialog');
+  const tileCardContent = document.getElementById('tile-card-content');
+
+  // Tracks the .chat-item-ref button that triggered the current dialog open,
+  // so we can update the chat message after a successful give-out.
+  let activeChatItemBtn = null;
+
+  async function openTileCard(itemNumber, sourceBtn) {
+    activeChatItemBtn = sourceBtn || null;
+
+    // Resolve tile ID by searching the inventory table rows
+    const row = document.querySelector(
+      '#inventory-body tr[data-tile-name="' + itemNumber.replace(/"/g, '') + '"]'
+    );
+    if (!row) {
+      tileCardContent.innerHTML =
+        '<p style="padding:var(--space-4);color:var(--color-text-muted)">' +
+        esc(itemNumber) + ' not found in this branch.</p>' +
+        '<button class="btn btn--ghost btn--sm" style="margin:0 var(--space-4) var(--space-4)" ' +
+        'onclick="document.getElementById(\'tile-card-dialog\').close()">Close</button>';
+      tileCardDialog.showModal();
+      return;
+    }
+    const tileId = row.dataset.tileId;
+    tileCardContent.innerHTML = '<p style="padding:var(--space-4);color:var(--color-text-muted)">Loading…</p>';
+    tileCardDialog.showModal();
+    try {
+      const res = await fetch('/tiles/' + tileId + '/card');
+      if (res.ok) {
+        tileCardContent.innerHTML = await res.text();
+      } else {
+        tileCardContent.innerHTML = '<p style="padding:var(--space-4);color:var(--color-critical-fg)">Failed to load tile.</p>';
+      }
+    } catch {
+      tileCardContent.innerHTML = '<p style="padding:var(--space-4);color:var(--color-critical-fg)">Network error.</p>';
+    }
+  }
+
+  // Close dialog on backdrop click
+  tileCardDialog.addEventListener('click', function (e) {
+    if (e.target === tileCardDialog) tileCardDialog.close();
+  });
+
+  // Give-out form submission
+  window.submitCardQtyChange = async function (event, tileId, currentQty, itemNumber, threshold) {
+    event.preventDefault();
+    const form = event.target;
+    const giveOut = parseInt(form.give_out.value, 10);
+    if (!giveOut || giveOut < 1 || giveOut > currentQty) return;
+    const newQty = currentQty - giveOut;
+    const submitBtn = form.querySelector('button[type=submit]');
+    submitBtn.disabled = true;
+    try {
+      const res = await fetch('/tiles/' + tileId, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'qty=' + newQty,
+      });
+      if (res.ok) {
+        // ── Update the qty badge ───────────────────────────────────────────
+        const newHealth = newQty === 0 ? 'critical'
+                        : newQty <= (threshold || 0) ? 'low'
+                        : 'healthy';
+        const badge = tileCardContent.querySelector('.badge');
+        if (badge) {
+          // Update qty text node
+          const textNode = Array.from(badge.childNodes)
+            .find(n => n.nodeType === Node.TEXT_NODE);
+          if (textNode) textNode.textContent = newQty;
+
+          // Swap health class
+          badge.className = 'badge badge--' + newHealth;
+          badge.setAttribute('aria-label',
+            newHealth.charAt(0).toUpperCase() + newHealth.slice(1) +
+            ': ' + newQty + ' in stock');
+
+          // Replace dot with checkmark or warning icon
+          const dot = badge.querySelector('.badge__dot');
+          if (dot) {
+            const icon = document.createElement('span');
+            icon.className = 'badge__icon';
+            icon.setAttribute('aria-hidden', 'true');
+            if (newQty === 0) {
+              icon.innerHTML =
+                '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" ' +
+                     'stroke-linecap="round" stroke-linejoin="round">' +
+                  '<path d="M8 2.5L14.5 13.5H1.5L8 2.5z"/>' +
+                  '<path d="M8 6.5v3"/>' +
+                  '<circle cx="8" cy="11" r="0.75" fill="currentColor" stroke="none"/>' +
+                '</svg>';
+            } else {
+              icon.innerHTML =
+                '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.5" ' +
+                     'stroke-linecap="round" stroke-linejoin="round">' +
+                  '<path d="M3 8l3.5 3.5L13 5"/>' +
+                '</svg>';
+            }
+            dot.replaceWith(icon);
+          }
+        }
+
+        // ── Visual feedback inside the dialog ──────────────────────────────
+        const actionsSection = form.closest('.tile-card__actions');
+        if (actionsSection) {
+          actionsSection.innerHTML =
+            '<div class="card-give-out-success" aria-live="polite">' +
+              '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5" ' +
+                   'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+                '<path d="M4 10l4.5 4.5L16 6"/>' +
+              '</svg>' +
+              '<span>Gave out ' + giveOut + ' sample' + (giveOut === 1 ? '' : 's') + '</span>' +
+            '</div>';
+        }
+
+        // ── Persist the handled state and update the chat message ─────────
+        const handledItemNumber = activeChatItemBtn ? activeChatItemBtn.dataset.item : itemNumber;
+        fetch('/chat/handled', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'item_number=' + encodeURIComponent(handledItemNumber),
+        }).catch(() => {}); // fire-and-forget; DOM update is the source of truth for UX
+
+        if (activeChatItemBtn) {
+          markItemHandled(activeChatItemBtn, AUTH_USER_NAME);
+          activeChatItemBtn = null;
+        }
+      } else {
+        submitBtn.disabled = false;
+        showToast('Update failed.', 'error');
+      }
+    } catch {
+      submitBtn.disabled = false;
+      showToast('Network error.', 'error');
+    }
+  };
+
   // Delegate clicks on item # reference buttons in the sidebar
   messagesEl.addEventListener('click', function (e) {
     const btn = e.target.closest('.chat-item-ref');
     if (!btn) return;
-    copyItemNumber(btn.dataset.item, e);
+    openTileCard(btn.dataset.item, btn);
   });
+
+  // ── Bridge for cart IIFE (shares pendingSent + append) ───────────────────
+  window.pendingSentAdd    = function (msg) { pendingSent.add(msg); };
+  window.pendingSentDelete = function (msg) { pendingSent.delete(msg); };
+  window.chatAppendOwn     = function (msg) {
+    appendToMessages(renderMessage(AUTH_USER_NAME, AUTH_ROLE, msg));
+  };
 
   // ── WebSocket ─────────────────────────────────────────────────────────────
   (function () {
@@ -424,6 +742,15 @@
             }
           }
 
+          if (ev.type === 'refill_requested') {
+            if (AUTH_ROLE === 'admin') {
+              showToast('Restock requested for ' + ev.item_number, 'info');
+              if (typeof window.__notifOnRefillRequested === 'function') {
+                window.__notifOnRefillRequested();
+              }
+            }
+          }
+
           if (ev.type === 'chat_message') {
             // Skip WS echo for messages we just sent (already rendered optimistically)
             if (ev.sender_name === AUTH_USER_NAME && pendingSent.has(ev.message)) {
@@ -448,6 +775,163 @@
     connect();
   })();
 
+})();
+
+// ── Cart ──────────────────────────────────────────────────────────────────────
+(function () {
+  const cartItems    = {}; // item_number → qty
+  const panel        = document.getElementById('cart-panel');
+  const itemsList    = document.getElementById('cart-panel-items');
+  const badge        = document.getElementById('cart-badge');
+  const toggleBtn    = document.getElementById('cart-toggle-btn');
+  const sendBtn      = document.getElementById('cart-send-btn');
+  const clearBtn     = document.getElementById('cart-clear-btn');
+  const closeBtn     = document.getElementById('cart-panel-close');
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function totalItems() {
+    return Object.values(cartItems).reduce(function (s, q) { return s + q; }, 0);
+  }
+
+  function syncBadge() {
+    const n = totalItems();
+    if (n > 0) {
+      badge.textContent = n;
+      badge.removeAttribute('hidden');
+      toggleBtn.removeAttribute('hidden');
+    } else {
+      badge.setAttribute('hidden', '');
+      toggleBtn.setAttribute('hidden', '');
+      closePanel();
+    }
+  }
+
+  function syncRowButtons() {
+    document.querySelectorAll('#inventory-body .btn-cart-add').forEach(function (btn) {
+      const row = btn.closest('tr');
+      const itemNumber = row ? row.dataset.tileName : null;
+      if (itemNumber && cartItems[itemNumber]) {
+        btn.classList.add('btn-cart-add--in-cart');
+      } else {
+        btn.classList.remove('btn-cart-add--in-cart');
+      }
+    });
+  }
+
+  function renderItems() {
+    const entries = Object.entries(cartItems);
+    sendBtn.disabled = entries.length === 0;
+    if (entries.length === 0) {
+      itemsList.innerHTML = '<li class="cart-empty">No items added yet.</li>';
+      return;
+    }
+    itemsList.innerHTML = '';
+    entries.forEach(function (pair) {
+      const itemNumber = pair[0], qty = pair[1];
+      const li = document.createElement('li');
+      li.className = 'cart-item';
+      li.innerHTML =
+        '<span class="cart-item__name">' + esc(itemNumber) + '</span>' +
+        '<div class="cart-item__controls">' +
+          '<button class="cart-qty-btn" data-item="' + esc(itemNumber) + '" data-delta="-1" aria-label="Decrease">−</button>' +
+          '<span class="cart-qty-val">' + qty + '</span>' +
+          '<button class="cart-qty-btn" data-item="' + esc(itemNumber) + '" data-delta="1" aria-label="Increase">+</button>' +
+        '</div>' +
+        '<button class="cart-remove-btn" data-item="' + esc(itemNumber) + '" aria-label="Remove ' + esc(itemNumber) + '">✕</button>';
+      itemsList.appendChild(li);
+    });
+  }
+
+  itemsList.addEventListener('click', function (e) {
+    const qtyBtn    = e.target.closest('.cart-qty-btn');
+    const removeBtn = e.target.closest('.cart-remove-btn');
+    if (qtyBtn) {
+      const item  = qtyBtn.dataset.item;
+      const delta = parseInt(qtyBtn.dataset.delta, 10);
+      const next  = (cartItems[item] || 0) + delta;
+      if (next <= 0) delete cartItems[item]; else cartItems[item] = next;
+      syncBadge();
+      syncRowButtons();
+      renderItems();
+    } else if (removeBtn) {
+      delete cartItems[removeBtn.dataset.item];
+      syncBadge();
+      syncRowButtons();
+      renderItems();
+    }
+  });
+
+  // Public — called from row onclick
+  window.cartAdd = function (itemNumber) {
+    cartItems[itemNumber] = (cartItems[itemNumber] || 0) + 1;
+    syncBadge();
+    syncRowButtons();
+    if (panel.style.display !== 'none') renderItems();
+  };
+
+  // Open / close
+  function openPanel() {
+    renderItems();
+    panel.style.display = 'flex';
+    toggleBtn.setAttribute('aria-expanded', 'true');
+  }
+  function closePanel() {
+    panel.style.display = 'none';
+    toggleBtn.setAttribute('aria-expanded', 'false');
+  }
+
+  toggleBtn.addEventListener('click', function () {
+    panel.style.display === 'none' ? openPanel() : closePanel();
+  });
+  closeBtn.addEventListener('click', closePanel);
+
+  clearBtn.addEventListener('click', function () {
+    Object.keys(cartItems).forEach(function (k) { delete cartItems[k]; });
+    syncBadge();
+    syncRowButtons();
+    renderItems();
+  });
+
+  // Send to chat
+  sendBtn.addEventListener('click', async function () {
+    const entries = Object.entries(cartItems);
+    if (!entries.length) return;
+    const list = entries.map(function (p) {
+      return p[0] + (p[1] > 1 ? ' x' + p[1] : '');
+    }).join(', ');
+    const message = 'Requesting samples: ' + list;
+
+    sendBtn.disabled = true;
+
+    // Register before fetch so WS echo is recognised as our own message
+    if (window.pendingSentAdd) window.pendingSentAdd(message);
+
+    try {
+      const res = await fetch('/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'message=' + encodeURIComponent(message),
+      });
+      if (res.ok) {
+        if (window.chatAppendOwn) window.chatAppendOwn(message);
+        Object.keys(cartItems).forEach(function (k) { delete cartItems[k]; });
+        syncBadge();
+        syncRowButtons();
+        renderItems();
+        closePanel();
+      } else {
+        if (window.pendingSentDelete) window.pendingSentDelete(message);
+        sendBtn.disabled = false;
+      }
+    } catch (_) {
+      if (window.pendingSentDelete) window.pendingSentDelete(message);
+      sendBtn.disabled = false;
+    }
+  });
 })();
 </script>
 {% endblock %}

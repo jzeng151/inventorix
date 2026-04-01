@@ -6,9 +6,9 @@ use axum::{
     extract::{Path, State},
     response::{IntoResponse, Redirect},
     routing::{get, post},
-    Form, Router,
+    Form, Json, Router,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use tera::Context;
 
 use crate::{auth::extractor::{AuthUser, Role}, AppError, AppState};
@@ -19,6 +19,7 @@ pub fn router() -> Router<AppState> {
         .route("/admin/users", post(create_user))
         .route("/admin/users/{id}/deactivate", post(deactivate_user))
         .route("/admin/users/{id}/reactivate", post(reactivate_user))
+        .route("/admin/refills/pending", get(pending_refills))
 }
 
 // ── GET /admin ────────────────────────────────────────────────────────────────
@@ -90,6 +91,48 @@ async fn admin_page(
     ctx.insert("branch_name", "Admin Panel");
 
     state.render("admin/page.html", &ctx)
+}
+
+// ── GET /admin/refills/pending ────────────────────────────────────────────────
+
+#[derive(Serialize)]
+struct PendingRefill {
+    id: i64,
+    tile_id: i64,
+    item_number: String,
+}
+
+async fn pending_refills(
+    State(state): State<AppState>,
+    auth: AuthUser,
+) -> Result<impl IntoResponse, AppError> {
+    if auth.role != Role::Admin {
+        return Err(AppError::Forbidden);
+    }
+
+    let rows = sqlx::query!(
+        r#"
+        SELECT rr.id, rr.tile_id, t.item_number
+        FROM refill_requests rr
+        JOIN tiles t ON rr.tile_id = t.id
+        WHERE rr.status = 'pending' AND t.branch_id = ?
+        ORDER BY rr.requested_at ASC
+        "#,
+        auth.branch_id
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    let result: Vec<PendingRefill> = rows
+        .into_iter()
+        .map(|r| PendingRefill {
+            id: r.id,
+            tile_id: r.tile_id,
+            item_number: r.item_number,
+        })
+        .collect();
+
+    Ok(Json(result))
 }
 
 // ── POST /admin/users ─────────────────────────────────────────────────────────

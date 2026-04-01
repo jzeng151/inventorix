@@ -53,6 +53,9 @@ struct ActiveRefill {
     status: String,
     timer_expires_at: String,
     qty_requested: i64,
+    approved_by_name: Option<String>,
+    approved_at: Option<String>,
+    requested_at: String,
 }
 
 // ── Template view models (serialized to Tera) ─────────────────────────────────
@@ -76,6 +79,8 @@ struct TileView {
     refill_countdown: Option<String>,
     refill_id: Option<i64>,
     refill_qty: Option<i64>,
+    refill_approved_by: Option<String>,
+    refill_approved_at: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -122,9 +127,11 @@ pub async fn inventory_table(
     let refills = sqlx::query_as!(
         ActiveRefill,
         r#"
-        SELECT rr.tile_id, rr.id, rr.status, rr.timer_expires_at, rr.qty_requested
+        SELECT rr.tile_id, rr.id, rr.status, rr.timer_expires_at, rr.qty_requested,
+               u.name AS approved_by_name, rr.approved_at, rr.requested_at
         FROM refill_requests rr
         JOIN tiles t ON rr.tile_id = t.id
+        LEFT JOIN users u ON rr.approved_by = u.id
         WHERE t.branch_id = ? AND rr.status IN ('pending', 'approved')
         ORDER BY rr.requested_at DESC
         "#,
@@ -200,10 +207,12 @@ pub async fn tile_detail(
     let refill = sqlx::query_as!(
         ActiveRefill,
         r#"
-        SELECT tile_id, id, status, timer_expires_at, qty_requested
-        FROM refill_requests
-        WHERE tile_id = ? AND status IN ('pending', 'approved')
-        ORDER BY requested_at DESC LIMIT 1
+        SELECT rr.tile_id, rr.id, rr.status, rr.timer_expires_at, rr.qty_requested,
+               u.name AS approved_by_name, rr.approved_at, rr.requested_at
+        FROM refill_requests rr
+        LEFT JOIN users u ON rr.approved_by = u.id
+        WHERE rr.tile_id = ? AND rr.status IN ('pending', 'approved')
+        ORDER BY rr.requested_at DESC LIMIT 1
         "#,
         tile_id
     )
@@ -387,17 +396,21 @@ fn tile_health(qty: i64, threshold: i64) -> String {
     }
 }
 
-/// Format a SQLite datetime string ("YYYY-MM-DD HH:MM:SS") as a countdown.
-fn fmt_countdown(expires_at: &str, now: chrono::DateTime<Utc>) -> String {
+/// Format a SQLite datetime string ("YYYY-MM-DD HH:MM:SS") as an elapsed duration.
+fn fmt_elapsed(requested_at: &str, now: chrono::DateTime<Utc>) -> String {
     use chrono::NaiveDateTime;
-    let Ok(naive) = NaiveDateTime::parse_from_str(expires_at, "%Y-%m-%d %H:%M:%S") else {
+    let Ok(naive) = NaiveDateTime::parse_from_str(requested_at, "%Y-%m-%d %H:%M:%S") else {
         return "—".to_string();
     };
-    let remaining = naive.and_utc().signed_duration_since(now);
-    if remaining.num_seconds() <= 0 {
-        return "Expired".to_string();
+    let elapsed = now.signed_duration_since(naive.and_utc());
+    let total_minutes = elapsed.num_minutes().max(0);
+    let hours = total_minutes / 60;
+    let minutes = total_minutes % 60;
+    if hours == 0 {
+        format!("{minutes}m")
+    } else {
+        format!("{hours}h {minutes}m")
     }
-    format!("{}h {}m", remaining.num_hours(), remaining.num_minutes() % 60)
 }
 
 fn tile_view_from(
@@ -422,10 +435,12 @@ fn tile_view_from(
         health: health.to_string(),
         refill_status: refill.map(|r| r.status.clone()),
         refill_countdown: refill.and_then(|r| {
-            (r.status == "pending").then(|| fmt_countdown(&r.timer_expires_at, now))
+            (r.status == "pending").then(|| fmt_elapsed(&r.requested_at, now))
         }),
         refill_id: refill.map(|r| r.id),
         refill_qty: refill.map(|r| r.qty_requested),
+        refill_approved_by: refill.and_then(|r| r.approved_by_name.clone()),
+        refill_approved_at: refill.and_then(|r| r.approved_at.clone()),
     }
 }
 

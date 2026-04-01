@@ -164,6 +164,18 @@ async fn run_import(
             continue;
         }
 
+        // Exclude rows where collection or gts_description is blank or an Excel error
+        let collection_raw = opt_str(row.get(2));
+        let gts_raw = opt_str(row.get(3));
+        let is_junk = |v: &Option<String>| match v.as_deref() {
+            None => true,
+            Some(s) => matches!(s, "#SYNTAX" | "#N/A" | "#VALUE!"),
+        };
+        if is_junk(&collection_raw) || is_junk(&gts_raw) {
+            skipped += 1;
+            continue;
+        }
+
         let qty_raw = row.get(5).map(|c| c.to_string()).unwrap_or_default();
         let qty: i64 = match qty_raw.trim().parse::<f64>() {
             Ok(f) => f as i64,

@@ -96,7 +96,8 @@ body.sidebar-open {
 
 .topbar__branch {
   font-size: 14px;
-  color: var(--color-text-muted);
+  color: var(--color-header-text);
+  opacity: 0.7;
 }
 
 .topbar__spacer {
@@ -109,6 +110,164 @@ body.sidebar-open {
 
 .topbar__role {
   color: var(--color-text-muted);
+}
+
+.notif-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: none;
+  border: none;
+  color: var(--color-header-text);
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  opacity: 0.8;
+  transition: opacity 0.1s, background 0.1s;
+}
+
+.notif-btn:hover { opacity: 1; background: rgba(255,255,255,0.1); }
+
+.notif-btn svg { width: 20px; height: 20px; }
+
+.notif-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  border-radius: 8px;
+  background: #EF4444;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  border: 1.5px solid var(--color-header-bg);
+  pointer-events: none;
+}
+
+/* ── Notification wrapper + highlighted state ──────────────────────────────── */
+.notif-wrapper {
+  position: relative;
+}
+
+.notif-btn--active {
+  opacity: 1;
+  color: #FCD34D; /* amber-300 — bell turns gold when there are pending requests */
+}
+
+/* ── Notification popover ───────────────────────────────────────────────────── */
+.notif-popover {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  width: 320px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  z-index: 200;
+  overflow: hidden;
+}
+
+.notif-popover__header {
+  padding: var(--space-3) var(--space-4);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.notif-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.notif-empty {
+  padding: var(--space-4);
+  font-size: 13px;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.notif-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  font-size: 14px;
+}
+
+.notif-item:last-child {
+  border-bottom: none;
+}
+
+.notif-item__name {
+  font-weight: 600;
+  color: var(--color-text-primary);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notif-item__actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.notif-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+  background: none;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+.notif-action svg {
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+}
+
+.notif-action--approve {
+  color: var(--color-healthy-fg);
+  border-color: var(--color-healthy-fg);
+}
+
+.notif-action--approve:hover {
+  background: var(--color-healthy-bg);
+}
+
+.notif-action--reject {
+  color: var(--color-critical-fg);
+  border-color: var(--color-critical-fg);
+}
+
+.notif-action--reject:hover {
+  background: var(--color-critical-bg);
+}
+
+.notif-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 /* ── Main layout ────────────────────────────────────────────────────────────── */
@@ -289,6 +448,19 @@ body.sidebar-open {
 .badge--low     .badge__dot { background: var(--color-low-fg); }
 .badge--critical .badge__dot { background: var(--color-critical-fg); }
 
+/* Icon replaces dot after a qty update */
+.badge__icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.badge__icon svg { width: 11px; height: 11px; }
+
+.badge--healthy .badge__icon { color: var(--color-healthy-fg); }
+.badge--low     .badge__icon { color: var(--color-low-fg); }
+.badge--critical .badge__icon { color: var(--color-critical-fg); }
+
 /* ── Inventory table ─────────────────────────────────────────────────────────── */
 .table-wrap {
   overflow-x: auto;
@@ -300,6 +472,7 @@ table.inventory {
   width: 100%;
   border-collapse: collapse;
   font-size: 14px;
+  table-layout: fixed;
 }
 
 table.inventory thead tr {
@@ -371,8 +544,29 @@ table.inventory td {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 240px;
 }
+
+/* Column widths — table-layout: fixed, percentages of full table width */
+table.inventory th:nth-child(1),
+table.inventory td:nth-child(1) { width: 20%; }   /* item # */
+
+table.inventory th:nth-child(2),
+table.inventory td:nth-child(2) { width: 8%;  }   /* collection */
+
+table.inventory th:nth-child(3),
+table.inventory td:nth-child(3) { width: 27%; }   /* gts description — truncated */
+
+table.inventory th:nth-child(4),
+table.inventory td:nth-child(4) { width: 8%;  }   /* new bin */
+
+table.inventory th:nth-child(5),
+table.inventory td:nth-child(5) { width: 5%;  }   /* qty */
+
+table.inventory th:nth-child(6),
+table.inventory td:nth-child(6) { width: 16%; }   /* refill status */
+
+table.inventory th:nth-child(7),
+table.inventory td:nth-child(7) { width: 16%; }   /* notes — takes remaining space */
 
 /* ── Toast notifications ─────────────────────────────────────────────────────── */
 .toast-container {
@@ -401,6 +595,12 @@ table.inventory td {
 .toast--error {
   background: var(--color-critical-bg);
   color: var(--color-critical-fg);
+}
+
+.toast--info {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  border-left: 3px solid var(--color-accent);
 }
 
 /* ── WebSocket disconnect banner ─────────────────────────────────────────────── */
@@ -731,10 +931,40 @@ table.inventory td {
 .chat-msg[data-role="sales_rep"] { border-left: 3px solid var(--color-healthy-fg); }
 
 .chat-msg__meta {
-  display: block;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
   font-size: 12px;
   color: var(--color-text-muted);
   margin-bottom: var(--space-1);
+}
+
+.chat-msg__time {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  opacity: 0.7;
+  white-space: nowrap;
+}
+
+/* Date separator — centered rule with text */
+.chat-date-sep {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: var(--space-3) 0 var(--space-2);
+}
+
+.chat-date-sep::before,
+.chat-date-sep::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--color-border);
 }
 
 .chat-msg__body {
@@ -919,7 +1149,7 @@ table.inventory td {
 }
 
 .chat-sidebar__label {
-  font-size: 10px;
+  font-size: 14px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -988,7 +1218,233 @@ table.inventory tbody tr.row--selected {
   outline-offset: -2px;
 }
 
+/* ── Cart add button (inline in item # cell) ────────────────────────────────── */
+.item-cell {
+  overflow: hidden;
+}
+.item-cell__inner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  overflow: hidden;
+}
+
+.btn-cart-add {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.1s, color 0.1s, border-color 0.1s;
+  padding: 0;
+}
+
+.btn-cart-add svg { width: 12px; height: 12px; }
+
+tr:hover .btn-cart-add,
+tr:focus-within .btn-cart-add {
+  opacity: 1;
+}
+
+.btn-cart-add:hover {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.btn-cart-add--in-cart {
+  opacity: 1;
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.item-cell__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Cart toggle button (fixed, bottom-left) ────────────────────────────────── */
+.cart-toggle-btn {
+  position: fixed;
+  bottom: 28px;
+  left: 24px;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.22);
+  z-index: 121;
+  transition: background 0.1s, transform 0.1s;
+}
+
+.cart-toggle-btn svg { width: 22px; height: 22px; }
+.cart-toggle-btn:hover  { background: #1d4ed8; transform: scale(1.05); }
+.cart-toggle-btn:active { transform: scale(0.97); }
+
+.cart-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  border-radius: 8px;
+  background: #EF4444;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+}
+
+/* ── Cart panel ─────────────────────────────────────────────────────────────── */
+.cart-panel[hidden] { display: none; }
+
+.cart-panel {
+  position: fixed;
+  bottom: calc(28px + 50px + 12px);
+  left: 24px;
+  width: 280px;
+  max-height: 420px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.14);
+  z-index: 120;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.cart-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.cart-panel__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.cart-panel__close {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 4px;
+}
+
+.cart-panel__items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.cart-empty {
+  padding: var(--space-4);
+  font-size: 13px;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.cart-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+  font-size: 14px;
+}
+
+.cart-item:last-child { border-bottom: none; }
+
+.cart-item__name {
+  flex: 1;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cart-item__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-shrink: 0;
+}
+
+.cart-qty-btn {
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: none;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--color-text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cart-qty-btn:hover { background: var(--color-bg); }
+
+.cart-qty-val {
+  min-width: 20px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.cart-remove-btn {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  flex-shrink: 0;
+}
+.cart-remove-btn:hover { color: var(--color-critical-fg); }
+
+.cart-panel__footer {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
 /* ── Chat toggle button ────────────────────────────────────────────────────── */
+.chat-toggle-btn[hidden] { display: none; }
+.cart-toggle-btn[hidden] { display: none; }
+
 .chat-toggle-btn {
   position: fixed;
   bottom: 28px;
@@ -1063,6 +1519,33 @@ table.inventory tbody tr.row--selected {
   text-decoration: none;
 }
 
+/* Replaces .chat-item-ref after a give-out is confirmed */
+.chat-item-handled {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.chat-item-handled s {
+  text-decoration-color: var(--color-text-muted);
+}
+
+/* Success state inside the tile card actions section */
+.card-give-out-success {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-healthy-fg);
+  font-size: 14px;
+  font-weight: 600;
+  padding: var(--space-3) 0;
+}
+
+.card-give-out-success svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
 /* ── Tile card mini dialog ────────────────────────────────────────────────────── */
 dialog#tile-card-dialog {
   border: none;
@@ -1073,6 +1556,11 @@ dialog#tile-card-dialog {
   max-width: 95vw;
   max-height: 90vh;
   overflow-y: auto;
+  /* Force centering — some CSS resets clear the UA-stylesheet margin:auto */
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
 }
 
 dialog#tile-card-dialog::backdrop {

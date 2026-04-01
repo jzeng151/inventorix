@@ -9,6 +9,7 @@ use tokio::sync::mpsc;
 pub enum WsEvent {
     ChatMessage { sender_name: String, role: String, message: String },
     InventoryUpdate { tile_id: i64, new_qty: i64 },
+    RefillRequested { refill_id: i64, tile_id: i64, item_number: String },
     RefillStatusChange { refill_id: i64, status: String },
 }
 

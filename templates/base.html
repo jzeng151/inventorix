@@ -17,6 +17,22 @@
     <div class="topbar__spacer"></div>
     <span class="topbar__user">{{ auth_user_name | default(value="") }}</span>
     {% if auth_user_role == "admin" %}
+    <div class="notif-wrapper" id="notif-wrapper">
+      <button class="notif-btn" id="notif-btn" aria-label="Notifications" aria-expanded="false" aria-haspopup="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+          <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+        </svg>
+        <span class="notif-badge" id="notif-badge" aria-live="polite" hidden>0</span>
+      </button>
+      <div class="notif-popover" id="notif-popover" role="dialog" aria-label="Pending restock requests" hidden>
+        <div class="notif-popover__header">Restock Requests</div>
+        <ul class="notif-list" id="notif-list" aria-live="polite">
+          <li class="notif-empty" id="notif-empty">Loading…</li>
+        </ul>
+      </div>
+    </div>
     <a href="/admin" class="btn btn--ghost">Admin</a>
     {% endif %}
     <form action="/auth/logout" method="post" style="display:inline">
@@ -31,6 +47,157 @@
   <main class="main" role="main">
     {% block content %}{% endblock %}
   </main>
+
+  {% if auth_user_role == "admin" %}
+  <script>
+  (function () {
+    const btn     = document.getElementById('notif-btn');
+    const popover = document.getElementById('notif-popover');
+    const badge   = document.getElementById('notif-badge');
+    const list    = document.getElementById('notif-list');
+
+    if (!btn) return; // not admin
+
+    // ── Badge helpers ──────────────────────────────────────────────────────────
+    function setBadge(n) {
+      if (n > 0) {
+        badge.textContent = n;
+        badge.removeAttribute('hidden');
+        btn.classList.add('notif-btn--active');
+      } else {
+        badge.setAttribute('hidden', '');
+        btn.classList.remove('notif-btn--active');
+      }
+    }
+
+    // ── Render list from JSON array ────────────────────────────────────────────
+    function renderList(items) {
+      list.innerHTML = '';
+      if (!items.length) {
+        list.innerHTML = '<li class="notif-empty">No pending requests</li>';
+        return;
+      }
+      items.forEach(function (item) {
+        const li = document.createElement('li');
+        li.className = 'notif-item';
+        li.dataset.refillId = item.id;
+        li.innerHTML =
+          '<span class="notif-item__name">' + escHtml(item.item_number) + '</span>' +
+          '<div class="notif-item__actions">' +
+            '<button class="notif-action notif-action--approve" ' +
+                    'aria-label="Approve restock for ' + escHtml(item.item_number) + '" ' +
+                    'data-refill-id="' + item.id + '" title="Approve">' +
+              '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5" ' +
+                   'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+                '<path d="M4 10l4.5 4.5L16 6"/>' +
+              '</svg>' +
+            '</button>' +
+            '<button class="notif-action notif-action--reject" ' +
+                    'aria-label="Decline restock for ' + escHtml(item.item_number) + '" ' +
+                    'data-refill-id="' + item.id + '" title="Decline">' +
+              '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5" ' +
+                   'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+                '<path d="M5 5l10 10M15 5L5 15"/>' +
+              '</svg>' +
+            '</button>' +
+          '</div>';
+        list.appendChild(li);
+      });
+    }
+
+    function escHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    // ── Fetch pending count (on page load) ─────────────────────────────────────
+    async function fetchPending() {
+      try {
+        const res = await fetch('/admin/refills/pending');
+        if (!res.ok) return;
+        const items = await res.json();
+        setBadge(items.length);
+        return items;
+      } catch (_) { /* silent */ }
+    }
+
+    fetchPending();
+
+    // ── Open / close popover ───────────────────────────────────────────────────
+    async function openPopover() {
+      popover.removeAttribute('hidden');
+      btn.setAttribute('aria-expanded', 'true');
+      list.innerHTML = '<li class="notif-empty">Loading…</li>';
+      const items = await fetchPending();
+      if (items) renderList(items);
+    }
+
+    function closePopover() {
+      popover.setAttribute('hidden', '');
+      btn.setAttribute('aria-expanded', 'false');
+    }
+
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (popover.hasAttribute('hidden')) {
+        openPopover();
+      } else {
+        closePopover();
+      }
+    });
+
+    document.addEventListener('click', function (e) {
+      if (!popover.hasAttribute('hidden') && !popover.contains(e.target)) {
+        closePopover();
+      }
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') closePopover();
+    });
+
+    // ── Approve / reject actions ───────────────────────────────────────────────
+    list.addEventListener('click', async function (e) {
+      const approveBtn = e.target.closest('.notif-action--approve');
+      const rejectBtn  = e.target.closest('.notif-action--reject');
+      const actionBtn  = approveBtn || rejectBtn;
+      if (!actionBtn) return;
+
+      const refillId = actionBtn.dataset.refillId;
+      const endpoint = approveBtn
+        ? '/refill/' + refillId + '/approve'
+        : '/refill/' + refillId + '/reject';
+
+      actionBtn.disabled = true;
+
+      try {
+        const res = await fetch(endpoint, { method: 'POST' });
+        if (res.ok) {
+          const li = list.querySelector('[data-refill-id="' + refillId + '"]');
+          if (li) li.remove();
+          if (!list.querySelector('.notif-item')) {
+            list.innerHTML = '<li class="notif-empty">No pending requests</li>';
+          }
+          const remaining = list.querySelectorAll('.notif-item').length;
+          setBadge(remaining);
+        } else {
+          actionBtn.disabled = false;
+        }
+      } catch (_) {
+        actionBtn.disabled = false;
+      }
+    });
+
+    // ── WS: update badge when new refill arrives ───────────────────────────────
+    window.__notifOnRefillRequested = function () {
+      fetchPending().then(function (items) {
+        if (items && !popover.hasAttribute('hidden')) renderList(items);
+      });
+    };
+  })();
+  </script>
+  {% endif %}
 
 </body>
 </html>

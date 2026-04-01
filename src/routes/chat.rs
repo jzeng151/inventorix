@@ -3,7 +3,7 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
-    Form, Router,
+    Form, Json, Router,
 };
 use axum::extract::ws::{Message, WebSocket};
 use serde::{Deserialize, Serialize};
@@ -11,7 +11,7 @@ use tera::Context;
 use tokio::io::AsyncWriteExt;
 
 use crate::{
-    auth::extractor::AuthUser,
+    auth::extractor::{AuthUser, Role},
     ws::manager::WsEvent,
     AppError, AppState,
 };
@@ -21,6 +21,8 @@ pub fn router() -> Router<AppState> {
         .route("/ws", get(ws_handler))
         .route("/chat", post(send_chat))
         .route("/chat", get(chat_history))
+        .route("/chat/handled", post(mark_handled))
+        .route("/chat/handled", get(list_handled))
 }
 
 // ── WebSocket upgrade ─────────────────────────────────────────────────────────
@@ -103,6 +105,9 @@ struct ChatEntry {
     user_name: String,
     role: String,
     message: String,
+    time_str: String,      // e.g. "2:30 PM"
+    date_str: String,      // e.g. "Mar 31, 2026"
+    show_date_sep: bool,   // true when this is the first message of a new calendar day
 }
 
 async fn chat_history(
@@ -115,6 +120,70 @@ async fn chat_history(
     ctx.insert("messages", &messages);
 
     state.render("tiles/chat-messages.html", &ctx)
+}
+
+// ── POST /chat/handled — record a give-out so chat history shows strikethrough ─
+
+#[derive(Deserialize)]
+struct HandledForm {
+    item_number: String,
+}
+
+async fn mark_handled(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Form(form): Form<HandledForm>,
+) -> Result<impl IntoResponse, AppError> {
+    if auth.role == Role::SalesRep {
+        return Err(AppError::Forbidden);
+    }
+    if form.item_number.is_empty() || form.item_number.len() > 100 {
+        return Err(AppError::ValidationError("Invalid item number".into()));
+    }
+
+    sqlx::query!(
+        "INSERT INTO chat_give_outs (branch_id, item_number, handled_by_name) VALUES (?, ?, ?)",
+        auth.branch_id, form.item_number, auth.name
+    )
+    .execute(&state.db)
+    .await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
+
+// ── GET /chat/handled — return handled items for this branch ──────────────────
+
+#[derive(Serialize)]
+struct HandledItem {
+    item_number: String,
+    handled_by_name: String,
+}
+
+async fn list_handled(
+    State(state): State<AppState>,
+    auth: AuthUser,
+) -> Result<impl IntoResponse, AppError> {
+    let rows = sqlx::query!(
+        r#"
+        SELECT item_number, handled_by_name
+        FROM chat_give_outs
+        WHERE branch_id = ?
+        ORDER BY handled_at DESC
+        "#,
+        auth.branch_id
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    let items: Vec<HandledItem> = rows
+        .into_iter()
+        .map(|r| HandledItem {
+            item_number: r.item_number,
+            handled_by_name: r.handled_by_name,
+        })
+        .collect();
+
+    Ok(Json(items))
 }
 
 // ── Log helpers ───────────────────────────────────────────────────────────────
@@ -166,7 +235,7 @@ async fn write_chat_log(
 /// Reads all chat entries for a branch from the last 7 days of log files.
 /// Returns up to 100 entries in chronological order.
 async fn read_branch_chat(log_dir: &str, branch_id: i64) -> Vec<ChatEntry> {
-    let mut entries: Vec<(String, ChatEntry)> = Vec::new();
+    let mut entries: Vec<(String, String, String, String)> = Vec::new();
 
     for days_ago in (0i64..7).rev() {
         let date = (chrono::Utc::now() - chrono::Duration::days(days_ago))
@@ -187,12 +256,9 @@ async fn read_branch_chat(log_dir: &str, branch_id: i64) -> Vec<ChatEntry> {
             let ts = v["ts"].as_str().unwrap_or("").to_string();
             entries.push((
                 ts.clone(),
-                ChatEntry {
-                    ts,
-                    user_name: v["user_name"].as_str().unwrap_or("Unknown").to_string(),
-                    role: v["role"].as_str().unwrap_or("").to_string(),
-                    message: v["message"].as_str().unwrap_or("").to_string(),
-                },
+                v["user_name"].as_str().unwrap_or("Unknown").to_string(),
+                v["role"].as_str().unwrap_or("").to_string(),
+                v["message"].as_str().unwrap_or("").to_string(),
             ));
         }
     }
@@ -201,7 +267,43 @@ async fn read_branch_chat(log_dir: &str, branch_id: i64) -> Vec<ChatEntry> {
     if entries.len() > 100 {
         entries.drain(..entries.len() - 100);
     }
-    entries.into_iter().map(|(_, e)| e).collect()
+
+    let mut prev_date = String::new();
+    entries
+        .into_iter()
+        .map(|(ts, user_name, role, message)| {
+            let (time_str, date_str) = fmt_chat_ts(&ts);
+            let show_date_sep = date_str != prev_date;
+            if show_date_sep {
+                prev_date = date_str.clone();
+            }
+            ChatEntry { ts, user_name, role, message, time_str, date_str, show_date_sep }
+        })
+        .collect()
+}
+
+/// Parse an RFC 3339 timestamp and return (time_str, date_str).
+/// time_str: "2:30 PM"   date_str: "Mar 31, 2026"
+fn fmt_chat_ts(ts: &str) -> (String, String) {
+    use chrono::{Datelike, Timelike};
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    let Ok(dt) = chrono::DateTime::parse_from_rfc3339(ts) else {
+        return ("—".to_string(), "—".to_string());
+    };
+    let h24 = dt.hour();
+    let h12 = match h24 % 12 { 0 => 12, h => h };
+    let ampm = if h24 >= 12 { "PM" } else { "AM" };
+    let time_str = format!("{}:{:02} {}", h12, dt.minute(), ampm);
+    let date_str = format!(
+        "{} {}, {}",
+        MONTHS[(dt.month0()) as usize],
+        dt.day(),
+        dt.year()
+    );
+    (time_str, date_str)
 }
 
 /// Delete chat log files older than 30 days. Called from the daily purge job.

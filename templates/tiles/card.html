@@ -8,6 +8,10 @@
 
   <table class="tile-card__fields">
     <tr>
+      <th>GTS Description</th>
+      <td>{{ tile.gts_description | default(value="—") }}</td>
+    </tr>
+    <tr>
       <th>Collection</th>
       <td>{{ tile.collection | default(value="—") }}</td>
     </tr>
@@ -41,7 +45,7 @@
 
   {% if auth_user_role == "coordinator" or auth_user_role == "admin" %}
   <section class="tile-card__actions">
-    <form onsubmit="submitCardQtyChange(event, {{ tile.id }}, {{ tile.qty }})">
+    <form onsubmit="submitCardQtyChange(event, {{ tile.id }}, {{ tile.qty }}, '{{ tile.item_number }}', {{ tile.low_inventory_threshold }})">
       <p class="tile-card__action-label">Give out samples:</p>
       <div class="qty-row">
         <input type="number" name="give_out"

@@ -18,6 +18,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/tiles/{id}/refill", post(request_refill))
         .route("/refill/{id}/approve", post(approve_refill))
+        .route("/refill/{id}/reject", post(reject_refill))
         .route("/refill/{id}/fulfill", post(fulfill_refill))
 }
 
@@ -43,18 +44,18 @@ async fn request_refill(
         ));
     }
 
-    // Branch isolation
-    sqlx::query!(
-        "SELECT id FROM tiles WHERE id = ? AND branch_id = ?",
+    // Branch isolation — also fetch item_number for the WS notification
+    let tile = sqlx::query!(
+        "SELECT id, item_number FROM tiles WHERE id = ? AND branch_id = ?",
         tile_id, auth.branch_id
     )
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;
 
-    // Block duplicate active requests
+    // Block duplicate pending requests (approved ones are fine — coordinator may need more)
     if sqlx::query!(
-        "SELECT id FROM refill_requests WHERE tile_id = ? AND status IN ('pending', 'approved')",
+        "SELECT id FROM refill_requests WHERE tile_id = ? AND status = 'pending'",
         tile_id
     )
     .fetch_optional(&state.db)
@@ -62,7 +63,7 @@ async fn request_refill(
     .is_some()
     {
         return Err(AppError::Conflict(
-            "An active refill request already exists for this tile".into(),
+            "A pending refill request already exists for this tile".into(),
         ));
     }
 
@@ -80,9 +81,10 @@ async fn request_refill(
 
     state.ws_manager.broadcast(
         auth.branch_id,
-        WsEvent::RefillStatusChange {
+        WsEvent::RefillRequested {
             refill_id,
-            status: "pending".to_string(),
+            tile_id,
+            item_number: tile.item_number,
         },
     );
 
@@ -96,7 +98,7 @@ async fn approve_refill(
     auth: AuthUser,
     Path(refill_id): Path<i64>,
 ) -> Result<impl IntoResponse, AppError> {
-    if auth.role == Role::Coordinator {
+    if auth.role != Role::Admin {
         return Err(AppError::Forbidden);
     }
 
@@ -153,6 +155,57 @@ async fn approve_refill(
         WsEvent::RefillStatusChange {
             refill_id,
             status: "approved".to_string(),
+        },
+    );
+
+    Ok(htmx_refresh())
+}
+
+// ── POST /refill/{id}/reject ──────────────────────────────────────────────────
+
+async fn reject_refill(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(refill_id): Path<i64>,
+) -> Result<impl IntoResponse, AppError> {
+    if auth.role != Role::Admin {
+        return Err(AppError::Forbidden);
+    }
+
+    let req = sqlx::query!(
+        r#"
+        SELECT rr.id, rr.status, t.branch_id
+        FROM refill_requests rr
+        JOIN tiles t ON rr.tile_id = t.id
+        WHERE rr.id = ? AND t.branch_id = ?
+        "#,
+        refill_id, auth.branch_id
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound)?;
+
+    if req.status != "pending" {
+        return Err(AppError::Conflict(format!(
+            "Cannot reject a '{}' request",
+            req.status
+        )));
+    }
+
+    sqlx::query!(
+        r#"UPDATE refill_requests
+           SET status = 'rejected', rejected_by = ?, rejected_at = datetime('now')
+           WHERE id = ?"#,
+        auth.id, refill_id
+    )
+    .execute(&state.db)
+    .await?;
+
+    state.ws_manager.broadcast(
+        auth.branch_id,
+        WsEvent::RefillStatusChange {
+            refill_id,
+            status: "rejected".to_string(),
         },
     );
 
