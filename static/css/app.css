@@ -568,6 +568,39 @@ table.inventory td:nth-child(6) { width: 16%; }   /* refill status */
 table.inventory th:nth-child(7),
 table.inventory td:nth-child(7) { width: 16%; }   /* notes — takes remaining space */
 
+/* ── History page ────────────────────────────────────────────────────────────── */
+.history-table th { font-size: 0.7rem; letter-spacing: 0.06em; color: var(--color-text-muted); }
+.history-table td { padding: 10px var(--space-4); }
+
+.history-ts { white-space: nowrap; }
+.history-ts__time {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+.history-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.history-badge--requested  { background: #fff3cd; color: #856404; }
+.history-badge--approved   { background: #cfe2ff; color: #084298; }
+.history-badge--fulfilled  { background: #d1e7dd; color: #0a3622; }
+.history-badge--rejected   { background: #f8d7da; color: #842029; }
+.history-badge--giveout    { background: #e9d5ff; color: #5b21b6; }
+
+.history-count {
+  text-align: right;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  padding: var(--space-3) var(--space-4);
+}
+
 /* ── Toast notifications ─────────────────────────────────────────────────────── */
 .toast-container {
   position: fixed;

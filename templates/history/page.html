@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+
+{% block title %}History — Inventorix{% endblock %}
+
+{% block subbar %}
+<div class="subbar">
+  <input id="hf-item"   type="search" class="form-input subbar__search" placeholder="Item #">
+  <input id="hf-person" type="search" class="form-input subbar__search" placeholder="Person">
+  <input id="hf-date"   type="date"   class="form-input subbar__search" aria-label="Filter by date">
+  <select id="hf-action" class="form-input subbar__search" aria-label="Filter by action">
+    <option value="">All actions</option>
+    <option value="restock requested">Restock Requested</option>
+    <option value="restock approved">Restock Approved</option>
+    <option value="restock fulfilled">Restock Fulfilled</option>
+    <option value="restock rejected">Restock Rejected</option>
+    <option value="give out">Give Out</option>
+  </select>
+  <button type="button" id="hf-clear" class="btn btn--secondary btn--sm" style="display:none" aria-label="Clear filters">✕ Clear</button>
+  <div class="subbar__spacer"></div>
+  <a href="/" class="btn btn--secondary">← Inventory</a>
+</div>
+{% endblock %}
+
+{% block content %}
+
+{% if entries | length == 0 %}
+<div class="empty-state">
+  <div class="empty-state__icon" aria-hidden="true">📋</div>
+  <p class="empty-state__heading">No history yet.</p>
+  <p class="empty-state__sub">Restock requests and give-outs will appear here.</p>
+</div>
+{% else %}
+
+<div class="table-wrap">
+  <table class="inventory history-table" role="grid" aria-label="Action history">
+    <thead>
+      <tr>
+        <th scope="col">DATE &amp; TIME</th>
+        <th scope="col">ITEM #</th>
+        <th scope="col">ACTION</th>
+        <th scope="col">PERSON</th>
+      </tr>
+    </thead>
+    <tbody id="history-body">
+      {% for e in entries %}
+      <tr data-item="{{ e.item_number | lower }}"
+          data-person="{{ e.person | lower }}"
+          data-action="{{ e.action | lower }}"
+          data-date="{{ e.date_str }}">
+        <td class="history-ts">{{ e.date_str }}<span class="history-ts__time">{{ e.time_str }}</span></td>
+        <td title="{{ e.item_number }}">{{ e.item_number }}</td>
+        <td><span class="history-badge history-badge--{{ e.action_slug }}">{{ e.action }}</span></td>
+        <td>{{ e.person }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<p class="history-count" id="history-count" aria-live="polite">
+  Showing {{ entries | length }} entries
+</p>
+
+{% endif %}
+
+<script>
+(function () {
+  const tbody    = document.getElementById('history-body');
+  if (!tbody) return;
+
+  const inputItem   = document.getElementById('hf-item');
+  const inputPerson = document.getElementById('hf-person');
+  const inputDate   = document.getElementById('hf-date');
+  const inputAction = document.getElementById('hf-action');
+  const clearBtn    = document.getElementById('hf-clear');
+  const countEl     = document.getElementById('history-count');
+
+  const rows = Array.from(tbody.querySelectorAll('tr')).map(function (row) {
+    return {
+      el:     row,
+      item:   row.dataset.item,
+      person: row.dataset.person,
+      action: row.dataset.action,
+      date:   row.dataset.date,
+    };
+  });
+
+  function syncClear() {
+    var any = inputItem.value || inputPerson.value || inputDate.value || inputAction.value;
+    clearBtn.style.display = any ? '' : 'none';
+  }
+
+  var raf = null;
+  function applyFilters() {
+    var tItem   = inputItem.value.toLowerCase().trim();
+    var tPerson = inputPerson.value.toLowerCase().trim();
+    var tAction = inputAction.value.toLowerCase();
+    var tDate   = inputDate.value; // "YYYY-MM-DD" or ""
+
+    if (raf) cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(function () {
+      var visible = 0;
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        var show =
+          (!tItem   || r.item.includes(tItem))   &&
+          (!tPerson || r.person.includes(tPerson)) &&
+          (!tAction || r.action.includes(tAction)) &&
+          (!tDate   || matchesDate(r.date, tDate));
+        r.el.style.display = show ? '' : 'none';
+        if (show) visible++;
+      }
+      if (countEl) {
+        countEl.textContent = 'Showing ' + visible + ' of ' + rows.length + ' entries';
+      }
+    });
+  }
+
+  // tDate is "YYYY-MM-DD"; r.date is "Apr 1, 2026" — convert input to display form for comparison
+  function matchesDate(rowDate, tDate) {
+    if (!tDate) return true;
+    // Parse "YYYY-MM-DD" and format as "Mon D, YYYY" to match server output
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const parts = tDate.split('-');
+    if (parts.length !== 3) return false;
+    const m = parseInt(parts[1], 10) - 1;
+    const d = parseInt(parts[2], 10);
+    const y = parseInt(parts[0], 10);
+    const formatted = months[m] + ' ' + d + ', ' + y;
+    return rowDate === formatted;
+  }
+
+  var debounce = null;
+  function onInput() {
+    syncClear();
+    clearTimeout(debounce);
+    debounce = setTimeout(applyFilters, 100);
+  }
+
+  inputItem.addEventListener('input', onInput);
+  inputPerson.addEventListener('input', onInput);
+  inputDate.addEventListener('input', onInput);
+  inputAction.addEventListener('change', function () { syncClear(); applyFilters(); });
+
+  clearBtn.addEventListener('click', function () {
+    inputItem.value = '';
+    inputPerson.value = '';
+    inputDate.value = '';
+    inputAction.value = '';
+    syncClear();
+    applyFilters();
+  });
+})();
+</script>
+
+{% endblock %}

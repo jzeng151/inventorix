@@ -11,6 +11,7 @@ pub mod admin;
 pub mod chat;
 pub mod export;
 pub mod health;
+pub mod history;
 pub mod import;
 pub mod refill;
 pub mod tiles;
@@ -38,6 +39,7 @@ pub async fn build_router(state: AppState) -> Router {
         .merge(health::router())
         .merge(tiles::router())
         .merge(chat::router())
+        .merge(history::router())
         .merge(import::router())
         .merge(export::router())
         .merge(refill::router())
