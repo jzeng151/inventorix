@@ -1,0 +1,382 @@
+{% extends "base.html" %}
+
+{% block title %}Analytics — Inventorix{% endblock %}
+
+{% block subbar %}
+<form method="get" action="/analytics" class="subbar">
+  <label class="subbar__label" for="an-from">From</label>
+  <input id="an-from" type="date" name="date_from" value="{{ date_from }}" class="form-input subbar__search">
+  <label class="subbar__label" for="an-to">To</label>
+  <input id="an-to" type="date" name="date_to" value="{{ date_to }}" class="form-input subbar__search">
+  <button type="submit" class="btn btn--primary btn--sm">Generate</button>
+  <div class="subbar__spacer"></div>
+  <a href="/" class="btn btn--secondary">← Inventory</a>
+</form>
+{% endblock %}
+
+{% block content %}
+
+<!-- Threshold controls -->
+<div class="analytics-threshold">
+  <span>Highlight tiles with</span>
+  <label>≥ <input type="number" id="thr-giveout" value="5" min="1" class="form-input"> give-outs</label>
+  <label>or ≥ <input type="number" id="thr-restock" value="3" min="1" class="form-input"> restock requests</label>
+  <label class="analytics-threshold__pending">
+    <input type="checkbox" id="thr-pending-only"> Show only pending fulfillment
+  </label>
+</div>
+
+<!-- Summary cards -->
+<div class="analytics-cards">
+  <div class="analytics-card">
+    <div class="analytics-card__label">Total Give-Outs</div>
+    <div class="analytics-card__value">{{ total_give_outs }}</div>
+  </div>
+  <div class="analytics-card">
+    <div class="analytics-card__label">Total Restock Requests</div>
+    <div class="analytics-card__value">{{ total_restocks }}</div>
+  </div>
+  <div class="analytics-card">
+    <div class="analytics-card__label">Qty Restocked</div>
+    <div class="analytics-card__value">{{ total_qty_restocked }}</div>
+  </div>
+  <div class="analytics-card">
+    <div class="analytics-card__label">Times Restocked</div>
+    <div class="analytics-card__value">{{ times_restocked }}</div>
+  </div>
+  <div class="analytics-card">
+    <div class="analytics-card__label">Avg Restock Amt</div>
+    <div class="analytics-card__value">{{ avg_restock_amt }}</div>
+  </div>
+  <div class="analytics-card {% if total_rejections > 0 %}analytics-card--rejected{% endif %}">
+    <div class="analytics-card__label">Restock Rejections</div>
+    <div class="analytics-card__value">{{ total_rejections }}</div>
+  </div>
+  <div class="analytics-card {% if pending_restocks_count > 0 %}analytics-card--pending{% endif %}">
+    <div class="analytics-card__label">Pending Fulfillment</div>
+    <div class="analytics-card__value">{{ pending_restocks_count }}</div>
+  </div>
+  <button class="analytics-card analytics-card--flagged analytics-card--clickable"
+          id="flagged-card" aria-haspopup="dialog" aria-label="View flagged tiles">
+    <div class="analytics-card__label">Flagged Tiles ↗</div>
+    <div class="analytics-card__value" id="flagged-count">—</div>
+  </button>
+</div>
+
+<!-- Flagged tiles dialog -->
+<dialog id="flagged-dialog" aria-label="Flagged tiles">
+  <div class="flagged-dialog__header">
+    <h2 class="flagged-dialog__title">Flagged Tiles</h2>
+    <button class="chat-sidebar__close" onclick="this.closest('dialog').close()" aria-label="Close">✕</button>
+  </div>
+  <div id="flagged-dialog-body"></div>
+</dialog>
+
+{% if entries | length == 0 %}
+<div class="empty-state">
+  <div class="empty-state__icon" aria-hidden="true">📊</div>
+  <p class="empty-state__heading">No activity in this date range.</p>
+  <p class="empty-state__sub">Adjust the date range and click Generate.</p>
+</div>
+{% else %}
+
+<!-- Charts -->
+<div class="analytics-charts">
+  <div class="analytics-chart-box">
+    <h3>Give-Outs by Item</h3>
+    <canvas id="chart-giveout" height="260"></canvas>
+  </div>
+  <div class="analytics-chart-box">
+    <h3>Restock Requests by Item</h3>
+    <canvas id="chart-restock" height="260"></canvas>
+  </div>
+</div>
+
+<!-- Item # filter + detail table -->
+<div style="padding: 0 var(--space-4) var(--space-2); display:flex; align-items:center; gap:var(--space-3);">
+  <input id="an-item-search" type="search" class="form-input" placeholder="Filter by item #" style="max-width:240px">
+</div>
+
+<div class="table-wrap" style="padding: 0 var(--space-4) var(--space-8);">
+  <table class="inventory analytics-table" role="grid" aria-label="Activity by tile">
+    <thead>
+      <tr>
+        <th scope="col">ITEM #</th>
+        <th scope="col">COLLECTION</th>
+        <th scope="col">GTS DESCRIPTION</th>
+        <th scope="col">QTY</th>
+        <th scope="col">GIVE-OUTS</th>
+        <th scope="col">RESTOCKS</th>
+      </tr>
+    </thead>
+    <tbody id="analytics-body">
+      {% for e in entries %}
+      <tr data-item="{{ e.item_number | lower }}"
+          data-giveout="{{ e.give_out_count }}"
+          data-restock="{{ e.restock_count }}"
+          data-pending="{{ e.pending_restock }}">
+        <td title="{{ e.item_number }}">{{ e.item_number }}</td>
+        <td title="{{ e.collection }}">{{ e.collection | default(value="—") }}</td>
+        <td title="{{ e.gts_description }}">{{ e.gts_description | default(value="—") }}</td>
+        <td>{{ e.current_qty }}</td>
+        <td>{{ e.give_out_count }}</td>
+        <td>{{ e.restock_count }}{% if e.pending_restock %} <span class="analytics-pending-badge">Pending</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js" defer></script>
+<script>
+(function () {
+  var ENTRIES = {{ entries_json | safe }};
+  var TOP_N = 20;
+
+  var thrGiveout    = document.getElementById('thr-giveout');
+  var thrRestock    = document.getElementById('thr-restock');
+  var thrPendingOnly = document.getElementById('thr-pending-only');
+  var flaggedEl    = document.getElementById('flagged-count');
+  var flaggedCard  = document.getElementById('flagged-card');
+  var flaggedDlg   = document.getElementById('flagged-dialog');
+  var flaggedBody  = document.getElementById('flagged-dialog-body');
+  var searchEl     = document.getElementById('an-item-search');
+  var tbody        = document.getElementById('analytics-body');
+
+  var COLOR_NORMAL  = '#2563EB'; // --color-accent
+  var COLOR_FLAGGED = '#DC2626'; // --color-critical-fg
+  var COLOR_NORMAL_A  = 'rgba(37,99,235,0.15)';
+  var COLOR_FLAGGED_A = 'rgba(220,38,38,0.15)';
+
+  var chartGiveout = null;
+  var chartRestock = null;
+
+  // ── Row cache for table filtering ─────────────────────────────────────────
+  var rows = Array.from(tbody.querySelectorAll('tr')).map(function (row) {
+    var cells = row.querySelectorAll('td');
+    return {
+      el:          row,
+      item:        row.dataset.item,
+      giveout:     parseInt(row.dataset.giveout, 10),
+      restock:     parseInt(row.dataset.restock, 10),
+      pending:     row.dataset.pending === 'true',
+      itemDisplay: cells[0] ? cells[0].textContent.trim() : '',
+      collection:  cells[1] ? cells[1].getAttribute('title') || cells[1].textContent.trim() : '',
+      gtsDesc:     cells[2] ? cells[2].getAttribute('title') || cells[2].textContent.trim() : '',
+    };
+  });
+
+  // ── Threshold helpers ──────────────────────────────────────────────────────
+  function getThr() {
+    return {
+      g: parseInt(thrGiveout.value, 10) || 1,
+      r: parseInt(thrRestock.value,  10) || 1,
+    };
+  }
+
+  function isFlagged(entry, thr) {
+    return entry.give_out_count >= thr.g || entry.restock_count >= thr.r;
+  }
+
+  // ── Chart builders ─────────────────────────────────────────────────────────
+  function barColors(values, threshold) {
+    return values.map(function (v) { return v >= threshold ? COLOR_FLAGGED : COLOR_NORMAL; });
+  }
+  function barBgColors(values, threshold) {
+    return values.map(function (v) { return v >= threshold ? COLOR_FLAGGED_A : COLOR_NORMAL_A; });
+  }
+
+  function buildCharts(thr) {
+    var byGiveout = ENTRIES.slice()
+      .sort(function (a, b) { return b.give_out_count - a.give_out_count; })
+      .slice(0, TOP_N)
+      .filter(function (e) { return e.give_out_count > 0; });
+
+    var byRestock = ENTRIES.slice()
+      .sort(function (a, b) { return b.restock_count - a.restock_count; })
+      .slice(0, TOP_N)
+      .filter(function (e) { return e.restock_count > 0; });
+
+    var goLabels = byGiveout.map(function (e) { return e.item_number; });
+    var goValues = byGiveout.map(function (e) { return e.give_out_count; });
+    var rrLabels = byRestock.map(function (e) { return e.item_number; });
+    var rrValues = byRestock.map(function (e) { return e.restock_count; });
+
+    var chartOpts = {
+      indexAxis: 'y',
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { beginAtZero: true, ticks: { precision: 0 } },
+        y: { ticks: { font: { size: 11 } } },
+      },
+    };
+
+    if (chartGiveout) { chartGiveout.destroy(); }
+    if (chartRestock) { chartRestock.destroy(); }
+
+    var ctxG = document.getElementById('chart-giveout').getContext('2d');
+    chartGiveout = new Chart(ctxG, {
+      type: 'bar',
+      data: {
+        labels: goLabels,
+        datasets: [{
+          data: goValues,
+          backgroundColor: barBgColors(goValues, thr.g),
+          borderColor: barColors(goValues, thr.g),
+          borderWidth: 1.5,
+          borderRadius: 3,
+        }],
+      },
+      options: chartOpts,
+    });
+
+    var ctxR = document.getElementById('chart-restock').getContext('2d');
+    chartRestock = new Chart(ctxR, {
+      type: 'bar',
+      data: {
+        labels: rrLabels,
+        datasets: [{
+          data: rrValues,
+          backgroundColor: barBgColors(rrValues, thr.r),
+          borderColor: barColors(rrValues, thr.r),
+          borderWidth: 1.5,
+          borderRadius: 3,
+        }],
+      },
+      options: chartOpts,
+    });
+  }
+
+  // ── Table row highlights + flagged count ───────────────────────────────────
+  var currentFlagged = [];
+
+  function applyThreshold(thr) {
+    currentFlagged = [];
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      var flag = r.giveout >= thr.g || r.restock >= thr.r;
+      if (flag) {
+        r.el.classList.add('row--flagged');
+        currentFlagged.push(r);
+      } else {
+        r.el.classList.remove('row--flagged');
+      }
+    }
+    if (flaggedEl) flaggedEl.textContent = currentFlagged.length;
+  }
+
+  // ── Flagged dialog ─────────────────────────────────────────────────────────
+  function esc(str) {
+    return String(str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function openFlaggedDialog() {
+    if (!currentFlagged.length) return;
+    var html = '<table class="inventory analytics-table flagged-dialog__table">' +
+      '<thead><tr>' +
+        '<th>ITEM #</th><th>COLLECTION</th><th>GTS DESCRIPTION</th>' +
+      '</tr></thead><tbody>';
+    for (var i = 0; i < currentFlagged.length; i++) {
+      var r = currentFlagged[i];
+      html += '<tr>' +
+        '<td title="' + esc(r.itemDisplay) + '">' + esc(r.itemDisplay) + '</td>' +
+        '<td title="' + esc(r.collection)  + '">' + esc(r.collection  || '—') + '</td>' +
+        '<td title="' + esc(r.gtsDesc)     + '">' + esc(r.gtsDesc     || '—') + '</td>' +
+      '</tr>';
+    }
+    html += '</tbody></table>';
+    flaggedBody.innerHTML = html;
+    flaggedDlg.showModal();
+  }
+
+  if (flaggedCard) {
+    flaggedCard.addEventListener('click', openFlaggedDialog);
+  }
+
+  flaggedDlg.addEventListener('click', function (e) {
+    var rect = flaggedDlg.getBoundingClientRect();
+    if (e.clientX < rect.left || e.clientX > rect.right ||
+        e.clientY < rect.top  || e.clientY > rect.bottom) {
+      flaggedDlg.close();
+    }
+  });
+
+  // Re-run on bfcache restore so count is fresh and dialog isn't left open
+  window.addEventListener('pageshow', function (e) {
+    if (e.persisted) {
+      flaggedDlg.close();
+      refresh();
+    }
+  });
+
+  // ── Pending row highlights ─────────────────────────────────────────────────
+  function applyPendingHighlight() {
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].pending) {
+        rows[i].el.classList.add('row--pending');
+      } else {
+        rows[i].el.classList.remove('row--pending');
+      }
+    }
+  }
+
+  // ── Item search + pending filter ───────────────────────────────────────────
+  var debounce = null;
+  function applyTableFilters() {
+    var q       = searchEl ? searchEl.value.toLowerCase().trim() : '';
+    var pending = thrPendingOnly ? thrPendingOnly.checked : false;
+    requestAnimationFrame(function () {
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        var show = (!q || r.item.includes(q)) && (!pending || r.pending);
+        r.el.style.display = show ? '' : 'none';
+      }
+    });
+  }
+
+  if (searchEl) {
+    searchEl.addEventListener('input', function () {
+      clearTimeout(debounce);
+      debounce = setTimeout(applyTableFilters, 100);
+    });
+  }
+  if (thrPendingOnly) {
+    thrPendingOnly.addEventListener('change', applyTableFilters);
+  }
+
+  // ── Init + threshold listeners ─────────────────────────────────────────────
+  function refresh() {
+    var thr = getThr();
+    applyThreshold(thr);
+    applyPendingHighlight();
+    buildCharts(thr);
+  }
+
+  // Chart.js loads deferred — wait for it before rendering
+  window.addEventListener('load', function () {
+    if (typeof Chart === 'undefined') {
+      // Script not loaded yet (e.g. CDN blocked) — still apply table highlights
+      applyThreshold(getThr());
+      return;
+    }
+    refresh();
+  });
+
+  thrGiveout.addEventListener('input', function () {
+    var thr = getThr();
+    applyThreshold(thr);
+    if (chartGiveout) buildCharts(thr);
+  });
+  thrRestock.addEventListener('input', function () {
+    var thr = getThr();
+    applyThreshold(thr);
+    if (chartRestock) buildCharts(thr);
+  });
+})();
+</script>
+
+{% endif %}
+{% endblock %}

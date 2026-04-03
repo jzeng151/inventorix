@@ -2,10 +2,11 @@ use axum::{
     extract::{Path, State},
     http::{HeaderMap, HeaderValue, StatusCode},
     response::IntoResponse,
-    routing::post,
+    routing::{get, post},
     Form, Router,
 };
 use serde::Deserialize;
+use serde_json;
 
 use crate::{
     auth::extractor::{AuthUser, Role},
@@ -20,6 +21,7 @@ pub fn router() -> Router<AppState> {
         .route("/refill/{id}/approve", post(approve_refill))
         .route("/refill/{id}/reject", post(reject_refill))
         .route("/refill/{id}/fulfill", post(fulfill_refill))
+        .route("/refills/approved", get(approved_refills_json))
 }
 
 // ── POST /tiles/{id}/refill ───────────────────────────────────────────────────
@@ -93,13 +95,24 @@ async fn request_refill(
 
 // ── POST /refill/{id}/approve ─────────────────────────────────────────────────
 
+#[derive(Deserialize)]
+struct ApproveForm {
+    qty: i64,
+}
+
 async fn approve_refill(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(refill_id): Path<i64>,
+    Form(form): Form<ApproveForm>,
 ) -> Result<impl IntoResponse, AppError> {
     if auth.role != Role::Admin {
         return Err(AppError::Forbidden);
+    }
+    if form.qty <= 0 {
+        return Err(AppError::ValidationError(
+            "Approved quantity must be greater than 0".into(),
+        ));
     }
 
     let req = sqlx::query!(
@@ -125,9 +138,10 @@ async fn approve_refill(
 
     sqlx::query!(
         r#"UPDATE refill_requests
-           SET status = 'approved', approved_by = ?, approved_at = datetime('now')
+           SET status = 'approved', qty_requested = ?,
+               approved_by = ?, approved_at = datetime('now')
            WHERE id = ?"#,
-        auth.id, refill_id
+        form.qty, auth.id, refill_id
     )
     .execute(&state.db)
     .await?;
@@ -144,7 +158,7 @@ async fn approve_refill(
         .notify_refill(&RefillPayload {
             item_number: req.item_number,
             collection: req.collection,
-            qty_requested: req.qty_requested,
+            qty_requested: form.qty,
             branch,
         })
         .await
@@ -163,13 +177,30 @@ async fn approve_refill(
 
 // ── POST /refill/{id}/reject ──────────────────────────────────────────────────
 
+#[derive(Deserialize)]
+struct RejectForm {
+    reason: String,
+}
+
 async fn reject_refill(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(refill_id): Path<i64>,
+    Form(form): Form<RejectForm>,
 ) -> Result<impl IntoResponse, AppError> {
     if auth.role != Role::Admin {
         return Err(AppError::Forbidden);
+    }
+
+    // Sanitize: trim whitespace, enforce non-empty and max length
+    let reason = form.reason.trim().to_string();
+    if reason.is_empty() {
+        return Err(AppError::ValidationError("Rejection reason is required".into()));
+    }
+    if reason.len() > 500 {
+        return Err(AppError::ValidationError(
+            "Rejection reason must be 500 characters or fewer".into(),
+        ));
     }
 
     let req = sqlx::query!(
@@ -194,9 +225,10 @@ async fn reject_refill(
 
     sqlx::query!(
         r#"UPDATE refill_requests
-           SET status = 'rejected', rejected_by = ?, rejected_at = datetime('now')
+           SET status = 'rejected', rejected_by = ?, rejected_at = datetime('now'),
+               rejection_reason = ?
            WHERE id = ?"#,
-        auth.id, refill_id
+        auth.id, reason, refill_id
     )
     .execute(&state.db)
     .await?;
@@ -225,7 +257,7 @@ async fn fulfill_refill(
 
     let req = sqlx::query!(
         r#"
-        SELECT rr.id, rr.status, t.branch_id
+        SELECT rr.id, rr.status, rr.qty_requested, rr.tile_id, t.branch_id
         FROM refill_requests rr
         JOIN tiles t ON rr.tile_id = t.id
         WHERE rr.id = ? AND t.branch_id = ?
@@ -252,6 +284,23 @@ async fn fulfill_refill(
     .execute(&state.db)
     .await?;
 
+    sqlx::query!(
+        "UPDATE tiles SET qty = qty + ?, updated_at = datetime('now') WHERE id = ?",
+        req.qty_requested, req.tile_id
+    )
+    .execute(&state.db)
+    .await?;
+
+    let new_qty = sqlx::query!("SELECT qty FROM tiles WHERE id = ?", req.tile_id)
+        .fetch_one(&state.db)
+        .await?
+        .qty;
+
+    state.ws_manager.broadcast(
+        auth.branch_id,
+        WsEvent::InventoryUpdate { tile_id: req.tile_id, new_qty },
+    );
+
     state.ws_manager.broadcast(
         auth.branch_id,
         WsEvent::RefillStatusChange {
@@ -261,6 +310,44 @@ async fn fulfill_refill(
     );
 
     Ok(htmx_refresh())
+}
+
+// ── GET /refills/approved — coordinator notification data ─────────────────────
+
+async fn approved_refills_json(
+    State(state): State<AppState>,
+    auth: AuthUser,
+) -> Result<impl IntoResponse, AppError> {
+    if auth.role == Role::SalesRep {
+        return Err(AppError::Forbidden);
+    }
+
+    let rows = sqlx::query!(
+        r#"
+        SELECT rr.id, rr.tile_id, rr.qty_requested, t.item_number
+        FROM refill_requests rr
+        JOIN tiles t ON rr.tile_id = t.id
+        WHERE t.branch_id = ? AND rr.status = 'approved'
+        ORDER BY rr.approved_at DESC
+        "#,
+        auth.branch_id
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    let items: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|r| {
+            serde_json::json!({
+                "id": r.id,
+                "tile_id": r.tile_id,
+                "item_number": r.item_number,
+                "qty": r.qty_requested,
+            })
+        })
+        .collect();
+
+    Ok(axum::Json(items))
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

@@ -124,6 +124,31 @@
   <div id="tile-card-content"></div>
 </dialog>
 
+<!-- Note edit dialog -->
+<dialog id="note-edit-dialog" aria-modal="true" aria-label="Edit note"
+        data-role="{{ auth_user_role }}">
+  <div class="note-dialog__header">
+    <div>
+      <div id="note-dialog-item" class="note-dialog__item"></div>
+      <div id="note-dialog-gts" class="note-dialog__meta"></div>
+      <div id="note-dialog-collection" class="note-dialog__meta"></div>
+    </div>
+    <button class="chat-sidebar__close"
+            onclick="document.getElementById('note-edit-dialog').close()"
+            aria-label="Close">✕</button>
+  </div>
+  <div class="note-dialog__body">
+    <textarea id="note-dialog-textarea" class="form-input note-dialog__textarea"
+              maxlength="2000" placeholder="Add a note…"></textarea>
+    <p id="note-dialog-error" class="note-dialog__error" hidden></p>
+  </div>
+  <div class="note-dialog__footer">
+    <button id="note-dialog-save" class="btn btn--primary">Save</button>
+    <button class="btn btn--secondary"
+            onclick="document.getElementById('note-edit-dialog').close()">Cancel</button>
+  </div>
+</dialog>
+
 <!-- Chat toggle button (fixed, bottom-right) -->
 <button class="chat-toggle-btn" id="chat-toggle-btn"
         aria-label="Open chat panel" aria-expanded="false">
@@ -752,6 +777,12 @@
             }
           }
 
+          if (ev.type === 'refill_status_change') {
+            if (ev.status === 'approved' && typeof window.__notifOnRefillApproved === 'function') {
+              window.__notifOnRefillApproved();
+            }
+          }
+
           if (ev.type === 'chat_message') {
             // Skip WS echo for messages we just sent (already rendered optimistically)
             if (ev.sender_name === AUTH_USER_NAME && pendingSent.has(ev.message)) {
@@ -931,6 +962,75 @@
     } catch (_) {
       if (window.pendingSentDelete) window.pendingSentDelete(message);
       sendBtn.disabled = false;
+    }
+  });
+})();
+</script>
+
+<script>
+(function () {
+  var dlg         = document.getElementById('note-edit-dialog');
+  var itemEl      = document.getElementById('note-dialog-item');
+  var gtsEl       = document.getElementById('note-dialog-gts');
+  var collectionEl = document.getElementById('note-dialog-collection');
+  var textarea    = document.getElementById('note-dialog-textarea');
+  var errorEl  = document.getElementById('note-dialog-error');
+  var saveBtn  = document.getElementById('note-dialog-save');
+  var editable = dlg.dataset.role !== 'sales_rep';
+  var activeTileId = null;
+
+  window.__openNoteDialog = function (cell) {
+    activeTileId = cell.dataset.tileId;
+    itemEl.textContent = cell.dataset.item;
+    gtsEl.textContent = cell.dataset.gts || '';
+    collectionEl.textContent = cell.dataset.collection || '';
+    textarea.value = cell.dataset.note;
+    errorEl.hidden = true;
+
+    if (editable) {
+      textarea.removeAttribute('readonly');
+      saveBtn.hidden = false;
+    } else {
+      textarea.setAttribute('readonly', '');
+      saveBtn.hidden = true;
+    }
+
+    dlg.showModal();
+    if (editable) textarea.focus();
+  };
+
+  saveBtn.addEventListener('click', async function () {
+    errorEl.hidden = true;
+    var note = textarea.value;
+    saveBtn.disabled = true;
+    try {
+      var res = await fetch('/tiles/' + activeTileId + '/note', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'note=' + encodeURIComponent(note),
+      });
+      if (res.ok) {
+        dlg.close();
+        location.reload();
+      } else {
+        var text = await res.text();
+        errorEl.textContent = text || 'Failed to save note.';
+        errorEl.hidden = false;
+        saveBtn.disabled = false;
+      }
+    } catch (_) {
+      errorEl.textContent = 'Network error.';
+      errorEl.hidden = false;
+      saveBtn.disabled = false;
+    }
+  });
+
+  // Close on backdrop click
+  dlg.addEventListener('click', function (e) {
+    var rect = dlg.getBoundingClientRect();
+    if (e.clientX < rect.left || e.clientX > rect.right ||
+        e.clientY < rect.top  || e.clientY > rect.bottom) {
+      dlg.close();
     }
   });
 })();

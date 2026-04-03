@@ -1,7 +1,8 @@
 use axum::{
     extract::{Path, State},
+    http::{HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Redirect},
-    routing::{get, put},
+    routing::{get, post, put},
     Form, Router,
 };
 use chrono::Utc;
@@ -20,6 +21,7 @@ pub fn router() -> Router<AppState> {
         .route("/tiles/{id}", get(tile_detail))
         .route("/tiles/{id}", put(update_tile))
         .route("/tiles/{id}/card", get(tile_card))
+        .route("/tiles/{id}/note", post(edit_note))
 }
 
 // ── DB row types (returned by sqlx) ──────────────────────────────────────────
@@ -262,9 +264,24 @@ async fn tile_card(
     .await?
     .ok_or(AppError::NotFound)?;
 
+    let refill = sqlx::query_as!(
+        ActiveRefill,
+        r#"
+        SELECT rr.tile_id, rr.id, rr.status, rr.timer_expires_at, rr.qty_requested,
+               u.name AS approved_by_name, rr.approved_at, rr.requested_at
+        FROM refill_requests rr
+        LEFT JOIN users u ON rr.approved_by = u.id
+        WHERE rr.tile_id = ? AND rr.status IN ('pending', 'approved')
+        ORDER BY rr.requested_at DESC LIMIT 1
+        "#,
+        tile_id
+    )
+    .fetch_optional(&state.db)
+    .await?;
+
     let now = Utc::now();
     let health = tile_health(tile.qty, tile.low_inventory_threshold);
-    let tile_view = tile_view_from(&tile, None, &health, now);
+    let tile_view = tile_view_from(&tile, refill.as_ref(), &health, now);
 
     let mut ctx = Context::new();
     ctx.insert("tile", &tile_view);
@@ -382,6 +399,63 @@ pub async fn update_tile(
     }
 
     Ok(Redirect::to(&format!("/tiles/{tile_id}")))
+}
+
+// ── POST /tiles/:id/note — edit note and log to history ──────────────────────
+
+#[derive(Deserialize)]
+struct NoteForm {
+    note: String,
+}
+
+async fn edit_note(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(tile_id): Path<i64>,
+    Form(form): Form<NoteForm>,
+) -> Result<impl IntoResponse, AppError> {
+    if auth.role == Role::SalesRep {
+        return Err(AppError::Forbidden);
+    }
+    if form.note.len() > 2_000 {
+        return Err(AppError::ValidationError(
+            "Note must be 2,000 characters or fewer".into(),
+        ));
+    }
+
+    let tile = sqlx::query!(
+        "SELECT id, notes FROM tiles WHERE id = ? AND branch_id = ?",
+        tile_id, auth.branch_id
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound)?;
+
+    let old_note = tile.notes;
+    let new_note: Option<String> = if form.note.trim().is_empty() {
+        None
+    } else {
+        Some(form.note.clone())
+    };
+
+    sqlx::query!(
+        "UPDATE tiles SET notes = ?, updated_at = datetime('now') WHERE id = ?",
+        new_note, tile_id
+    )
+    .execute(&state.db)
+    .await?;
+
+    sqlx::query!(
+        r#"INSERT INTO note_edits (tile_id, branch_id, old_note, new_note, edited_by, edited_by_name)
+           VALUES (?, ?, ?, ?, ?, ?)"#,
+        tile_id, auth.branch_id, old_note, new_note, auth.id, auth.name
+    )
+    .execute(&state.db)
+    .await?;
+
+    let mut headers = HeaderMap::new();
+    headers.insert("HX-Refresh", HeaderValue::from_static("true"));
+    Ok((StatusCode::OK, headers))
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

@@ -14,7 +14,11 @@
     <option value="restock fulfilled">Restock Fulfilled</option>
     <option value="restock rejected">Restock Rejected</option>
     <option value="give out">Give Out</option>
+    <option value="note edited">Note Edited</option>
   </select>
+  <label class="subbar__checkbox-label">
+    <input type="checkbox" id="hf-pending"> Pending only
+  </label>
   <button type="button" id="hf-clear" class="btn btn--secondary btn--sm" style="display:none" aria-label="Clear filters">✕ Clear</button>
   <div class="subbar__spacer"></div>
   <a href="/" class="btn btn--secondary">← Inventory</a>
@@ -38,6 +42,7 @@
         <th scope="col">DATE &amp; TIME</th>
         <th scope="col">ITEM #</th>
         <th scope="col">ACTION</th>
+        <th scope="col">QTY</th>
         <th scope="col">PERSON</th>
       </tr>
     </thead>
@@ -46,10 +51,17 @@
       <tr data-item="{{ e.item_number | lower }}"
           data-person="{{ e.person | lower }}"
           data-action="{{ e.action | lower }}"
-          data-date="{{ e.date_str }}">
+          data-date="{{ e.date_str }}"
+          data-pending="{{ e.pending_fulfillment }}">
         <td class="history-ts">{{ e.date_str }}<span class="history-ts__time">{{ e.time_str }}</span></td>
         <td title="{{ e.item_number }}">{{ e.item_number }}</td>
-        <td><span class="history-badge history-badge--{{ e.action_slug }}">{{ e.action }}</span></td>
+        <td>
+          <span class="history-badge history-badge--{{ e.action_slug }}">{{ e.action }}</span>
+          {% if e.pending_fulfillment %}<span class="history-pending-badge">Awaiting Fulfillment</span>{% endif %}
+          {% if e.processing_time %}<div class="history-duration">{{ e.processing_time }}</div>{% endif %}
+          {% if e.rejection_reason %}<div class="history-duration history-rejection-reason">{{ e.rejection_reason }}</div>{% endif %}
+        </td>
+        <td>{% if e.qty %}{{ e.qty }}{% else %}—{% endif %}</td>
         <td>{{ e.person }}</td>
       </tr>
       {% endfor %}
@@ -68,34 +80,37 @@
   const tbody    = document.getElementById('history-body');
   if (!tbody) return;
 
-  const inputItem   = document.getElementById('hf-item');
-  const inputPerson = document.getElementById('hf-person');
-  const inputDate   = document.getElementById('hf-date');
-  const inputAction = document.getElementById('hf-action');
-  const clearBtn    = document.getElementById('hf-clear');
-  const countEl     = document.getElementById('history-count');
+  const inputItem    = document.getElementById('hf-item');
+  const inputPerson  = document.getElementById('hf-person');
+  const inputDate    = document.getElementById('hf-date');
+  const inputAction  = document.getElementById('hf-action');
+  const inputPending = document.getElementById('hf-pending');
+  const clearBtn     = document.getElementById('hf-clear');
+  const countEl      = document.getElementById('history-count');
 
   const rows = Array.from(tbody.querySelectorAll('tr')).map(function (row) {
     return {
-      el:     row,
-      item:   row.dataset.item,
-      person: row.dataset.person,
-      action: row.dataset.action,
-      date:   row.dataset.date,
+      el:      row,
+      item:    row.dataset.item,
+      person:  row.dataset.person,
+      action:  row.dataset.action,
+      date:    row.dataset.date,
+      pending: row.dataset.pending === 'true',
     };
   });
 
   function syncClear() {
-    var any = inputItem.value || inputPerson.value || inputDate.value || inputAction.value;
+    var any = inputItem.value || inputPerson.value || inputDate.value || inputAction.value || inputPending.checked;
     clearBtn.style.display = any ? '' : 'none';
   }
 
   var raf = null;
   function applyFilters() {
-    var tItem   = inputItem.value.toLowerCase().trim();
-    var tPerson = inputPerson.value.toLowerCase().trim();
-    var tAction = inputAction.value.toLowerCase();
-    var tDate   = inputDate.value; // "YYYY-MM-DD" or ""
+    var tItem    = inputItem.value.toLowerCase().trim();
+    var tPerson  = inputPerson.value.toLowerCase().trim();
+    var tAction  = inputAction.value.toLowerCase();
+    var tDate    = inputDate.value; // "YYYY-MM-DD" or ""
+    var tPending = inputPending.checked;
 
     if (raf) cancelAnimationFrame(raf);
     raf = requestAnimationFrame(function () {
@@ -103,10 +118,11 @@
       for (var i = 0; i < rows.length; i++) {
         var r = rows[i];
         var show =
-          (!tItem   || r.item.includes(tItem))   &&
-          (!tPerson || r.person.includes(tPerson)) &&
-          (!tAction || r.action.includes(tAction)) &&
-          (!tDate   || matchesDate(r.date, tDate));
+          (!tItem    || r.item.includes(tItem))    &&
+          (!tPerson  || r.person.includes(tPerson)) &&
+          (!tAction  || r.action.includes(tAction)) &&
+          (!tDate    || matchesDate(r.date, tDate)) &&
+          (!tPending || r.pending);
         r.el.style.display = show ? '' : 'none';
         if (show) visible++;
       }
@@ -141,12 +157,14 @@
   inputPerson.addEventListener('input', onInput);
   inputDate.addEventListener('input', onInput);
   inputAction.addEventListener('change', function () { syncClear(); applyFilters(); });
+  inputPending.addEventListener('change', function () { syncClear(); applyFilters(); });
 
   clearBtn.addEventListener('click', function () {
     inputItem.value = '';
     inputPerson.value = '';
     inputDate.value = '';
     inputAction.value = '';
+    inputPending.checked = false;
     syncClear();
     applyFilters();
   });

@@ -60,4 +60,30 @@
     </form>
   </section>
   {% endif %}
+
+  {% if auth_user_role == "coordinator" and tile.refill_status == "approved" and tile.refill_id %}
+  <section class="tile-card__restock-actions">
+    <p class="tile-card__action-label">Restock approved — confirm when shelved:</p>
+    <button class="btn btn--primary btn--sm"
+            onclick="window.confirmRestockFromCard({{ tile.refill_id }}, this)">
+      Confirm Restock
+    </button>
+  </section>
+  {% endif %}
+
+  {% if auth_user_role == "admin" and tile.refill_status == "pending" and tile.refill_id %}
+  <section class="tile-card__restock-actions">
+    <p class="tile-card__action-label">Restock requested: {{ tile.refill_qty | default(value="?") }} units</p>
+    <div class="tile-card__restock-btns">
+      <button class="btn btn--blue-outline btn--sm"
+              onclick="window.__openApproveDialog('{{ tile.refill_id }}')">
+        Approve Restock
+      </button>
+      <button class="btn btn--secondary btn--sm"
+              onclick="window.rejectRestockFromCard('{{ tile.refill_id }}')">
+        Deny Request
+      </button>
+    </div>
+  </section>
+  {% endif %}
 </div>

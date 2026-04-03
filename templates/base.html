@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Inventorix{% endblock %}</title>
-  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="/static/css/app.css?v=8">
   <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js" defer></script>
   <!-- TODO: bundle htmx.min.js locally under static/js/ before production -->
 </head>
@@ -16,7 +16,7 @@
     <span class="topbar__branch">{{ branch_name | default(value="—") }}</span>
     <div class="topbar__spacer"></div>
     <span class="topbar__user">{{ auth_user_name | default(value="") }}</span>
-    {% if auth_user_role == "admin" %}
+    {% if auth_user_role == "admin" or auth_user_role == "coordinator" %}
     <div class="notif-wrapper" id="notif-wrapper">
       <button class="notif-btn" id="notif-btn" aria-label="Notifications" aria-expanded="false" aria-haspopup="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -26,13 +26,16 @@
         </svg>
         <span class="notif-badge" id="notif-badge" aria-live="polite" hidden>0</span>
       </button>
-      <div class="notif-popover" id="notif-popover" role="dialog" aria-label="Pending restock requests" hidden>
-        <div class="notif-popover__header">Restock Requests</div>
+      <div class="notif-popover" id="notif-popover" role="dialog" aria-label="Restock notifications" hidden>
+        <div class="notif-popover__header">Restock Notifications</div>
         <ul class="notif-list" id="notif-list" aria-live="polite">
           <li class="notif-empty" id="notif-empty">Loading…</li>
         </ul>
       </div>
     </div>
+    {% endif %}
+    {% if auth_user_role == "admin" %}
+    <a href="/analytics" class="btn btn--ghost">Analytics</a>
     <a href="/admin" class="btn btn--ghost">Admin</a>
     {% endif %}
     <form action="/auth/logout" method="post" style="display:inline">
@@ -48,7 +51,13 @@
     {% block content %}{% endblock %}
   </main>
 
-  {% if auth_user_role == "admin" %}
+  {% if auth_user_role == "admin" or auth_user_role == "coordinator" %}
+  <dialog id="notif-tile-dialog" aria-modal="true" aria-label="Sample detail">
+    <div id="notif-tile-content"></div>
+  </dialog>
+  {% endif %}
+
+  {% if auth_user_role == "admin" or auth_user_role == "coordinator" %}
   <script>
   (function () {
     const btn     = document.getElementById('notif-btn');
@@ -56,9 +65,18 @@
     const badge   = document.getElementById('notif-badge');
     const list    = document.getElementById('notif-list');
 
-    if (!btn) return; // not admin
+    if (!btn) return;
 
-    // ── Badge helpers ──────────────────────────────────────────────────────────
+    const IS_ADMIN = '{{ auth_user_role }}' === 'admin';
+    const FETCH_URL = IS_ADMIN ? '/admin/refills/pending' : '/refills/approved';
+
+    function escHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    // ── Badge helpers ─────────────────────────────────────────────────────────
     function setBadge(n) {
       if (n > 0) {
         badge.textContent = n;
@@ -70,51 +88,72 @@
       }
     }
 
-    // ── Render list from JSON array ────────────────────────────────────────────
+    // ── Render list ───────────────────────────────────────────────────────────
     function renderList(items) {
       list.innerHTML = '';
       if (!items.length) {
-        list.innerHTML = '<li class="notif-empty">No pending requests</li>';
+        list.innerHTML = IS_ADMIN
+          ? '<li class="notif-empty">No pending requests</li>'
+          : '<li class="notif-empty">No approved restocks to confirm</li>';
         return;
       }
       items.forEach(function (item) {
         const li = document.createElement('li');
         li.className = 'notif-item';
         li.dataset.refillId = item.id;
-        li.innerHTML =
-          '<span class="notif-item__name">' + escHtml(item.item_number) + '</span>' +
-          '<div class="notif-item__actions">' +
-            '<button class="notif-action notif-action--approve" ' +
-                    'aria-label="Approve restock for ' + escHtml(item.item_number) + '" ' +
-                    'data-refill-id="' + item.id + '" title="Approve">' +
-              '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5" ' +
-                   'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-                '<path d="M4 10l4.5 4.5L16 6"/>' +
-              '</svg>' +
-            '</button>' +
-            '<button class="notif-action notif-action--reject" ' +
-                    'aria-label="Decline restock for ' + escHtml(item.item_number) + '" ' +
-                    'data-refill-id="' + item.id + '" title="Decline">' +
-              '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5" ' +
-                   'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-                '<path d="M5 5l10 10M15 5L5 15"/>' +
-              '</svg>' +
-            '</button>' +
-          '</div>';
+
+        const itemBtn =
+          '<button class="notif-item__name-btn" data-tile-id="' + item.tile_id + '" ' +
+                  'aria-label="View details for ' + escHtml(item.item_number) + '">' +
+            escHtml(item.item_number) +
+          '</button>';
+
+        if (IS_ADMIN) {
+          li.innerHTML =
+            itemBtn +
+            '<div class="notif-item__actions">' +
+              '<button class="notif-action notif-action--approve" ' +
+                      'aria-label="Approve restock for ' + escHtml(item.item_number) + '" ' +
+                      'data-refill-id="' + item.id + '" title="Approve">' +
+                '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5" ' +
+                     'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+                  '<path d="M4 10l4.5 4.5L16 6"/>' +
+                '</svg>' +
+              '</button>' +
+              '<button class="notif-action notif-action--reject" ' +
+                      'aria-label="Decline restock for ' + escHtml(item.item_number) + '" ' +
+                      'data-refill-id="' + item.id + '" title="Decline">' +
+                '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5" ' +
+                     'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+                  '<path d="M5 5l10 10M15 5L5 15"/>' +
+                '</svg>' +
+              '</button>' +
+            '</div>';
+        } else {
+          li.innerHTML =
+            itemBtn +
+            '<span class="notif-item__qty">(qty: ' + escHtml(String(item.qty)) + ')</span>' +
+            '<div class="notif-item__actions">' +
+              '<button class="notif-action notif-action--confirm" ' +
+                      'aria-label="Confirm restock for ' + escHtml(item.item_number) + '" ' +
+                      'data-refill-id="' + item.id + '" title="Confirm Restock">' +
+                '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5" ' +
+                     'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+                  '<path d="M4 10l4.5 4.5L16 6"/>' +
+                '</svg>' +
+              '</button>' +
+            '</div>';
+        }
+
         list.appendChild(li);
+        prefetchCard(String(item.tile_id));
       });
     }
 
-    function escHtml(str) {
-      return String(str)
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    }
-
-    // ── Fetch pending count (on page load) ─────────────────────────────────────
-    async function fetchPending() {
+    // ── Fetch list ────────────────────────────────────────────────────────────
+    async function fetchList() {
       try {
-        const res = await fetch('/admin/refills/pending');
+        const res = await fetch(FETCH_URL);
         if (!res.ok) return;
         const items = await res.json();
         setBadge(items.length);
@@ -122,14 +161,14 @@
       } catch (_) { /* silent */ }
     }
 
-    fetchPending();
+    fetchList();
 
-    // ── Open / close popover ───────────────────────────────────────────────────
+    // ── Open / close popover ──────────────────────────────────────────────────
     async function openPopover() {
       popover.removeAttribute('hidden');
       btn.setAttribute('aria-expanded', 'true');
       list.innerHTML = '<li class="notif-empty">Loading…</li>';
-      const items = await fetchPending();
+      const items = await fetchList();
       if (items) renderList(items);
     }
 
@@ -140,63 +179,368 @@
 
     btn.addEventListener('click', function (e) {
       e.stopPropagation();
-      if (popover.hasAttribute('hidden')) {
-        openPopover();
-      } else {
-        closePopover();
-      }
+      if (popover.hasAttribute('hidden')) { openPopover(); } else { closePopover(); }
     });
 
     document.addEventListener('click', function (e) {
-      if (!popover.hasAttribute('hidden') && !popover.contains(e.target)) {
-        closePopover();
-      }
+      if (!popover.hasAttribute('hidden') && !popover.contains(e.target)) closePopover();
     });
 
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') closePopover();
     });
 
-    // ── Approve / reject actions ───────────────────────────────────────────────
+    // ── Action clicks ─────────────────────────────────────────────────────────
     list.addEventListener('click', async function (e) {
       const approveBtn = e.target.closest('.notif-action--approve');
       const rejectBtn  = e.target.closest('.notif-action--reject');
-      const actionBtn  = approveBtn || rejectBtn;
-      if (!actionBtn) return;
+      const confirmBtn = e.target.closest('.notif-action--confirm');
+      if (!approveBtn && !rejectBtn && !confirmBtn) return;
 
-      const refillId = actionBtn.dataset.refillId;
-      const endpoint = approveBtn
-        ? '/refill/' + refillId + '/approve'
-        : '/refill/' + refillId + '/reject';
+      const refillId = (approveBtn || rejectBtn || confirmBtn).dataset.refillId;
 
-      actionBtn.disabled = true;
-
-      try {
-        const res = await fetch(endpoint, { method: 'POST' });
-        if (res.ok) {
+      if (approveBtn) {
+        window.__openApproveDialog(refillId, function () {
           const li = list.querySelector('[data-refill-id="' + refillId + '"]');
           if (li) li.remove();
           if (!list.querySelector('.notif-item')) {
             list.innerHTML = '<li class="notif-empty">No pending requests</li>';
           }
-          const remaining = list.querySelectorAll('.notif-item').length;
-          setBadge(remaining);
-        } else {
-          actionBtn.disabled = false;
-        }
-      } catch (_) {
-        actionBtn.disabled = false;
+          setBadge(list.querySelectorAll('.notif-item').length);
+        });
+        return;
+      }
+
+      if (rejectBtn) {
+        window.__openRejectDialog(refillId, function () {
+          const li = list.querySelector('[data-refill-id="' + refillId + '"]');
+          if (li) li.remove();
+          if (!list.querySelector('.notif-item')) {
+            list.innerHTML = '<li class="notif-empty">No pending requests</li>';
+          }
+          setBadge(list.querySelectorAll('.notif-item').length);
+        });
+        return;
+      }
+
+      if (confirmBtn) {
+        confirmBtn.disabled = true;
+        try {
+          const res = await fetch('/refill/' + refillId + '/fulfill', { method: 'POST' });
+          if (res.ok) {
+            const li = list.querySelector('[data-refill-id="' + refillId + '"]');
+            if (li) li.remove();
+            if (!list.querySelector('.notif-item')) {
+              list.innerHTML = '<li class="notif-empty">No approved restocks to confirm</li>';
+            }
+            setBadge(list.querySelectorAll('.notif-item').length);
+            location.reload();
+          } else { confirmBtn.disabled = false; }
+        } catch (_) { confirmBtn.disabled = false; }
+        return;
       }
     });
 
-    // ── WS: update badge when new refill arrives ───────────────────────────────
+    // ── Tile info dialog ──────────────────────────────────────────────────────
+    const tileInfoDlg     = document.getElementById('notif-tile-dialog');
+    const tileInfoContent = document.getElementById('notif-tile-content');
+    const cardCache       = new Map(); // tile_id → html string
+
+    function prefetchCard(tileId) {
+      if (cardCache.has(tileId)) return;
+      cardCache.set(tileId, null); // mark in-flight
+      fetch('/tiles/' + tileId + '/card')
+        .then(function (r) { return r.ok ? r.text() : null; })
+        .then(function (html) { if (html) cardCache.set(tileId, html); })
+        .catch(function () {});
+    }
+
+    list.addEventListener('click', async function (e) {
+      const itemBtn = e.target.closest('.notif-item__name-btn');
+      if (!itemBtn) return;
+      e.stopPropagation(); // keep notifications popover open
+      const tileId = itemBtn.dataset.tileId;
+      const cached = cardCache.get(tileId);
+      if (cached) {
+        tileInfoContent.innerHTML = cached;
+        tileInfoDlg.showModal();
+        return;
+      }
+      tileInfoContent.innerHTML = '<p style="padding:var(--space-4);color:var(--color-text-muted)">Loading…</p>';
+      tileInfoDlg.showModal();
+      try {
+        const res = await fetch('/tiles/' + tileId + '/card');
+        if (res.ok) {
+          const html = await res.text();
+          cardCache.set(tileId, html);
+          tileInfoContent.innerHTML = html;
+        } else {
+          tileInfoContent.innerHTML = '<p style="padding:var(--space-4);color:var(--color-critical-fg)">Could not load tile.</p>';
+        }
+      } catch (_) {
+        tileInfoContent.innerHTML = '<p style="padding:var(--space-4);color:var(--color-critical-fg)">Network error.</p>';
+      }
+    });
+
+    tileInfoDlg.addEventListener('click', function (e) {
+      e.stopPropagation(); // prevent document handler from closing the notifications popover
+      var rect = tileInfoDlg.getBoundingClientRect();
+      if (e.clientX < rect.left || e.clientX > rect.right ||
+          e.clientY < rect.top  || e.clientY > rect.bottom) {
+        tileInfoDlg.close();
+      }
+    });
+
+    // ── Confirm restock from tile card (coordinator) ──────────────────────────
+    window.rejectRestockFromCard = function (refillId) {
+      window.__openRejectDialog(refillId, function () {
+        tileInfoDlg.close();
+      });
+    };
+
+    window.confirmRestockFromCard = async function (refillId, btn) {
+      btn.disabled = true;
+      try {
+        const res = await fetch('/refill/' + refillId + '/fulfill', { method: 'POST' });
+        if (res.ok) {
+          // Invalidate cached card so next open fetches fresh data
+          tileInfoDlg.querySelectorAll('[data-tile-id]').forEach(function (el) {
+            cardCache.delete(String(el.dataset.tileId));
+          });
+          tileInfoDlg.close();
+          location.reload();
+        } else { btn.disabled = false; }
+      } catch (_) { btn.disabled = false; }
+    };
+
+    // ── WS bridges ───────────────────────────────────────────────────────────
     window.__notifOnRefillRequested = function () {
-      fetchPending().then(function (items) {
+      if (!IS_ADMIN) return;
+      fetchList().then(function (items) {
+        if (items && !popover.hasAttribute('hidden')) renderList(items);
+      });
+    };
+
+    window.__notifOnRefillApproved = function () {
+      if (IS_ADMIN) return;
+      fetchList().then(function (items) {
         if (items && !popover.hasAttribute('hidden')) renderList(items);
       });
     };
   })();
   </script>
+
+  {% if auth_user_role == "admin" %}
+  <!-- Reject reason dialog (admin only) -->
+  <dialog id="reject-reason-dialog" aria-label="Deny restock request">
+    <div class="approve-dialog__header">
+      <h2 class="approve-dialog__title">Deny Restock Request</h2>
+      <button class="chat-sidebar__close" id="reject-dialog-close" aria-label="Close">✕</button>
+    </div>
+    <div class="approve-dialog__body">
+      <label class="form-label" for="reject-reason-input">Reason for denial</label>
+      <textarea id="reject-reason-input" class="form-input reject-reason__textarea"
+                maxlength="500" rows="3" placeholder="Enter reason…" autocomplete="off"></textarea>
+      <p class="reject-reason__count"><span id="reject-reason-chars">0</span>/500</p>
+      <p class="approve-dialog__error" id="reject-reason-error" hidden></p>
+    </div>
+    <div class="approve-dialog__footer">
+      <button class="btn btn--primary" id="reject-reason-submit">Deny</button>
+      <button class="btn btn--secondary" id="reject-dialog-cancel">Cancel</button>
+    </div>
+  </dialog>
+
+  <script>
+  (function () {
+    const dlg       = document.getElementById('reject-reason-dialog');
+    const textarea  = document.getElementById('reject-reason-input');
+    const submitBtn = document.getElementById('reject-reason-submit');
+    const errorEl   = document.getElementById('reject-reason-error');
+    const closeBtn  = document.getElementById('reject-dialog-close');
+    const cancelBtn = document.getElementById('reject-dialog-cancel');
+    const charCount = document.getElementById('reject-reason-chars');
+    if (!dlg) return;
+
+    let pendingRefillId   = null;
+    let onSuccessCallback = null;
+
+    function showError(msg) {
+      errorEl.textContent = msg;
+      errorEl.removeAttribute('hidden');
+      textarea.classList.add('form-input--error');
+    }
+    function clearError() {
+      errorEl.setAttribute('hidden', '');
+      textarea.classList.remove('form-input--error');
+    }
+    function closeDialog() {
+      dlg.close();
+      textarea.value = '';
+      charCount.textContent = '0';
+      clearError();
+      pendingRefillId   = null;
+      onSuccessCallback = null;
+    }
+
+    window.__openRejectDialog = function (refillId, onSuccess) {
+      pendingRefillId   = refillId;
+      onSuccessCallback = onSuccess || null;
+      clearError();
+      textarea.value = '';
+      charCount.textContent = '0';
+      dlg.showModal();
+      textarea.focus();
+    };
+
+    textarea.addEventListener('input', function () {
+      charCount.textContent = this.value.length;
+      clearError();
+    });
+
+    submitBtn.addEventListener('click', async function () {
+      const reason = textarea.value.trim();
+      if (!reason) { showError('Please enter a reason.'); return; }
+      submitBtn.disabled = true;
+      try {
+        const res = await fetch('/refill/' + pendingRefillId + '/reject', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'reason=' + encodeURIComponent(reason),
+        });
+        if (res.ok) {
+          if (onSuccessCallback) onSuccessCallback();
+          closeDialog();
+          location.reload();
+        } else {
+          const text = await res.text().catch(() => '');
+          showError(text || 'Request failed. Please try again.');
+          submitBtn.disabled = false;
+        }
+      } catch (_) {
+        showError('Network error. Please try again.');
+        submitBtn.disabled = false;
+      }
+    });
+
+    textarea.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') closeDialog();
+    });
+
+    closeBtn.addEventListener('click', closeDialog);
+    cancelBtn.addEventListener('click', closeDialog);
+    dlg.addEventListener('click', function (e) {
+      if (e.target === dlg) closeDialog();
+    });
+  })();
+  </script>
+
+  <!-- Approve qty dialog (admin only) -->
+  <dialog id="approve-qty-dialog" aria-label="Approve restock">
+    <div class="approve-dialog__header">
+      <h2 class="approve-dialog__title">Approve Restock</h2>
+      <button class="chat-sidebar__close" id="approve-dialog-close" aria-label="Close">✕</button>
+    </div>
+    <div class="approve-dialog__body">
+      <label class="form-label" for="approve-qty-input">Quantity to approve</label>
+      <input id="approve-qty-input" type="number" class="form-input" min="1" placeholder="Enter qty" autocomplete="off">
+      <p class="approve-dialog__error" id="approve-qty-error" hidden></p>
+    </div>
+    <div class="approve-dialog__footer">
+      <button class="btn btn--primary" id="approve-qty-submit">Send</button>
+      <button class="btn btn--secondary" id="approve-dialog-cancel">Cancel</button>
+    </div>
+  </dialog>
+
+  <script>
+  (function () {
+    const dlg       = document.getElementById('approve-qty-dialog');
+    const input     = document.getElementById('approve-qty-input');
+    const submitBtn = document.getElementById('approve-qty-submit');
+    const errorEl   = document.getElementById('approve-qty-error');
+    const closeBtn  = document.getElementById('approve-dialog-close');
+    const cancelBtn = document.getElementById('approve-dialog-cancel');
+    if (!dlg) return;
+
+    let pendingRefillId  = null;
+    let onSuccessCallback = null;
+
+    function showError(msg) {
+      errorEl.textContent = msg;
+      errorEl.removeAttribute('hidden');
+      input.classList.add('form-input--error');
+    }
+    function clearError() {
+      errorEl.setAttribute('hidden', '');
+      input.classList.remove('form-input--error');
+    }
+    function closeDialog() {
+      dlg.close();
+      input.value = '';
+      clearError();
+      pendingRefillId = null;
+      onSuccessCallback = null;
+    }
+
+    window.__openApproveDialog = function (refillId, onSuccess) {
+      pendingRefillId   = refillId;
+      onSuccessCallback = onSuccess || null;
+      clearError();
+      input.value = '';
+      dlg.showModal();
+      input.focus();
+    };
+
+    // Only allow numeric input
+    input.addEventListener('input', function () {
+      this.value = this.value.replace(/[^0-9]/g, '');
+      clearError();
+    });
+
+    submitBtn.addEventListener('click', async function () {
+      const qty = parseInt(input.value, 10);
+      if (!input.value.trim() || isNaN(qty)) {
+        showError('Please enter a quantity.');
+        return;
+      }
+      if (qty === 0) {
+        showError('Quantity must be greater than 0.');
+        return;
+      }
+      submitBtn.disabled = true;
+      try {
+        const res = await fetch('/refill/' + pendingRefillId + '/approve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'qty=' + qty,
+        });
+        if (res.ok) {
+          if (onSuccessCallback) onSuccessCallback();
+          closeDialog();
+          location.reload();
+        } else {
+          const text = await res.text().catch(() => '');
+          showError(text || 'Approval failed. Please try again.');
+          submitBtn.disabled = false;
+        }
+      } catch (_) {
+        showError('Network error. Please try again.');
+        submitBtn.disabled = false;
+      }
+    });
+
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') submitBtn.click();
+      if (e.key === 'Escape') closeDialog();
+    });
+
+    closeBtn.addEventListener('click', closeDialog);
+    cancelBtn.addEventListener('click', closeDialog);
+    dlg.addEventListener('click', function (e) {
+      if (e.target === dlg) closeDialog();
+    });
+  })();
+  </script>
+  {% endif %}
   {% endif %}
 
 </body>

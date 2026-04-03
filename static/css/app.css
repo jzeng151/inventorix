@@ -221,6 +221,35 @@ body.sidebar-open {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.notif-item__qty { font-weight: 400; color: var(--color-text-muted); font-size: 0.85em; }
+.notif-item__name-btn {
+  all: unset;
+  font-weight: 600;
+  color: var(--color-accent);
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-decoration: underline;
+}
+.notif-item__name-btn:hover { opacity: 0.8; }
+
+#notif-tile-dialog {
+  border: none;
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  padding: 0;
+  max-width: 420px;
+  width: 90vw;
+  margin: auto;
+}
+#notif-tile-dialog[open] { display: flex; flex-direction: column; }
+#notif-tile-dialog::backdrop { background: rgba(0,0,0,0.35); }
+#notif-tile-dialog .tile-card__actions { display: none; }
+/* Hide give-out and restock actions in the chat tile-card context */
+#tile-card-dialog .tile-card__restock-actions { display: none; }
 
 .notif-item__actions {
   display: flex;
@@ -568,6 +597,247 @@ table.inventory td:nth-child(6) { width: 16%; }   /* refill status */
 table.inventory th:nth-child(7),
 table.inventory td:nth-child(7) { width: 16%; }   /* notes — takes remaining space */
 
+/* ── Analytics page ──────────────────────────────────────────────────────────── */
+.analytics-cards {
+  display: flex;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  flex-wrap: wrap;
+}
+.analytics-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4) var(--space-6);
+  flex: 1;
+  min-width: 160px;
+}
+.analytics-card__label {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.analytics-card__value {
+  font-size: 2rem;
+  font-weight: 700;
+  margin-top: var(--space-1);
+}
+.analytics-card--flagged .analytics-card__value { color: var(--color-critical-fg); }
+.analytics-card--rejected .analytics-card__value { color: var(--color-critical-fg); }
+.analytics-card--pending .analytics-card__value { color: #92400e; }
+
+.analytics-pending-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  border-radius: 10px;
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.analytics-table tr.row--pending { background: #fffbeb; }
+.analytics-table tr.row--pending td { font-weight: 500; }
+
+.analytics-threshold__pending {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: var(--space-4);
+  cursor: pointer;
+}
+
+.reject-reason__textarea { width: 100%; resize: vertical; min-height: 72px; }
+.reject-reason__count { font-size: 0.75rem; color: var(--color-text-muted); text-align: right; margin-top: var(--space-1); }
+
+.analytics-card--clickable {
+  all: unset;
+  box-sizing: border-box;
+  display: block;
+  cursor: pointer;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4) var(--space-6);
+  flex: 1;
+  min-width: 160px;
+  text-align: left;
+}
+.analytics-card--clickable:hover { border-color: var(--color-critical-fg); }
+
+#flagged-dialog {
+  border: none;
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  padding: 0;
+  max-width: 700px;
+  width: 90vw;
+  max-height: 80vh;
+  overflow: hidden;
+  margin: auto;
+}
+#flagged-dialog[open] { display: flex; flex-direction: column; }
+#flagged-dialog::backdrop { background: rgba(0,0,0,0.35); }
+.flagged-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-4) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+.flagged-dialog__title { font-size: 1.1rem; font-weight: 600; }
+#flagged-dialog-body { overflow-y: auto; flex: 1; }
+.flagged-dialog__table { width: 100%; }
+.flagged-dialog__table th:nth-child(1),
+.flagged-dialog__table td:nth-child(1) { width: 25%; }
+.flagged-dialog__table th:nth-child(2),
+.flagged-dialog__table td:nth-child(2) { width: 15%; }
+.flagged-dialog__table th:nth-child(3),
+.flagged-dialog__table td:nth-child(3) { width: 60%; }
+
+.analytics-charts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  padding: 0 var(--space-4) var(--space-4);
+}
+.analytics-chart-box {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+.analytics-chart-box h3 {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-3);
+}
+
+.analytics-threshold {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  font-size: 0.85rem;
+  flex-wrap: wrap;
+}
+.analytics-threshold label { display: flex; align-items: center; gap: var(--space-2); }
+.analytics-threshold input[type=number] { width: 64px; }
+
+.analytics-table tr.row--flagged { background: var(--color-critical-bg); }
+.analytics-table tr.row--flagged td { font-weight: 500; }
+
+/* Analytics table has 6 columns — override inventory's 7-column widths */
+table.analytics-table th:nth-child(1),
+table.analytics-table td:nth-child(1) { width: 20%; }   /* item # */
+table.analytics-table th:nth-child(2),
+table.analytics-table td:nth-child(2) { width: 10%;  }   /* collection */
+table.analytics-table th:nth-child(3),
+table.analytics-table td:nth-child(3) { width: 40%; }   /* gts description */
+table.analytics-table th:nth-child(4),
+table.analytics-table td:nth-child(4) { width: 10%; }   /* qty */
+table.analytics-table th:nth-child(5),
+table.analytics-table td:nth-child(5) { width: 10%;  }   /* give-outs */
+table.analytics-table th:nth-child(6),
+table.analytics-table td:nth-child(6) { width: 10%;  }   /* restocks */
+
+.subbar__label {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+/* ── Reject reason dialog ────────────────────────────────────────────────────── */
+#reject-reason-dialog {
+  border: none;
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  padding: 0;
+  width: 400px;
+  max-width: 94vw;
+  margin: auto;
+}
+#reject-reason-dialog::backdrop { background: rgba(0,0,0,0.35); }
+
+/* ── Approve qty dialog ──────────────────────────────────────────────────────── */
+#approve-qty-dialog {
+  border: none;
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  padding: 0;
+  width: 360px;
+  max-width: 94vw;
+  margin: auto;
+}
+#approve-qty-dialog::backdrop { background: rgba(0,0,0,0.35); }
+.approve-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+.approve-dialog__title { font-size: 1rem; font-weight: 600; }
+.approve-dialog__body {
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.approve-dialog__error {
+  font-size: 0.82rem;
+  color: var(--color-critical-fg);
+  margin-top: var(--space-1);
+}
+.approve-dialog__footer {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+}
+
+/* ── Notes cell ─────────────────────────────────────────────────────────────── */
+.notes-cell { cursor: pointer; }
+.notes-cell:hover { color: var(--color-accent); text-decoration: underline; }
+
+/* ── Note edit dialog ────────────────────────────────────────────────────────── */
+#note-edit-dialog {
+  border: none;
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  padding: 0;
+  max-width: 480px;
+  width: 90vw;
+  margin: auto;
+}
+#note-edit-dialog[open] { display: flex; flex-direction: column; }
+#note-edit-dialog::backdrop { background: rgba(0,0,0,0.35); }
+.note-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--color-border);
+}
+.note-dialog__item { font-size: 1rem; font-weight: 600; }
+.note-dialog__meta { font-size: 0.82rem; color: var(--color-text-muted); margin-top: 2px; }
+.note-dialog__body { padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-2); }
+.note-dialog__textarea { width: 100%; min-height: 120px; resize: vertical; font-family: inherit; box-sizing: border-box; }
+.note-dialog__error { font-size: 0.82rem; color: var(--color-critical-fg); }
+.note-dialog__footer {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
 /* ── History page ────────────────────────────────────────────────────────────── */
 .history-table th { font-size: 0.7rem; letter-spacing: 0.06em; color: var(--color-text-muted); }
 .history-table td { padding: 10px var(--space-4); }
@@ -593,6 +863,31 @@ table.inventory td:nth-child(7) { width: 16%; }   /* notes — takes remaining s
 .history-badge--fulfilled  { background: #d1e7dd; color: #0a3622; }
 .history-badge--rejected   { background: #f8d7da; color: #842029; }
 .history-badge--giveout    { background: #e9d5ff; color: #5b21b6; }
+.history-badge--note-edited { background: #fef9c3; color: #713f12; }
+.history-duration { font-size: 0.75rem; color: var(--color-text-muted); margin-top: 2px; }
+.history-rejection-reason { color: var(--color-critical-fg); font-style: italic; }
+
+.history-pending-badge {
+  display: inline-block;
+  margin-left: var(--space-2);
+  padding: 1px 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  border-radius: 10px;
+  background: #fef3c7;
+  color: #92400e;
+  vertical-align: middle;
+}
+
+.subbar__checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.875rem;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  cursor: pointer;
+}
 
 .history-count {
   text-align: right;
@@ -1665,6 +1960,12 @@ dialog#tile-card-dialog::backdrop {
 .tile-card__avail {
   font-size: 13px;
   color: var(--color-text-muted);
+}
+
+.tile-card__restock-btns {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
 /* ── Mobile ─────────────────────────────────────────────────────────────────── */

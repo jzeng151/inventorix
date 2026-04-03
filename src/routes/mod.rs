@@ -8,6 +8,7 @@ use tower_sessions_sqlx_store::SqliteStore;
 use crate::AppState;
 
 pub mod admin;
+pub mod analytics;
 pub mod chat;
 pub mod export;
 pub mod health;
@@ -39,6 +40,7 @@ pub async fn build_router(state: AppState) -> Router {
         .merge(health::router())
         .merge(tiles::router())
         .merge(chat::router())
+        .merge(analytics::router())
         .merge(history::router())
         .merge(import::router())
         .merge(export::router())

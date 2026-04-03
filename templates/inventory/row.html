@@ -38,13 +38,7 @@
         </span>
       {% elif tile.refill_status == "approved" %}
         <span class="refill-badge refill-badge--approved"
-              title="Approved by {{ tile.refill_approved_by | default(value='unknown') }}{% if tile.refill_approved_at %} on {{ tile.refill_approved_at }}{% endif %}">Approved ✓</span>
-        <button class="btn btn--amber-outline btn--sm"
-                onclick="event.stopPropagation()"
-                hx-post="/tiles/{{ tile.id }}/refill"
-                hx-vals='{"qty": "1"}'
-                hx-swap="none"
-                title="Request additional stock">+ Request More</button>
+              title="Approved by {{ tile.refill_approved_by | default(value='unknown') }}{% if tile.refill_approved_at %} on {{ tile.refill_approved_at }}{% endif %} — confirm via notifications when restocked">Approved ✓ Pending</span>
       {% elif tile.refill_status == "fulfilled" %}
         <span class="refill-badge refill-badge--fulfilled">Fulfilled</span>
         <button class="btn btn--amber-outline btn--sm"
@@ -62,12 +56,17 @@
     {% endif %}
     {% if auth_user_role == "admin" and tile.refill_status == "pending" and tile.refill_id %}
         <button class="btn btn--blue-outline"
-                onclick="event.stopPropagation()"
-                hx-post="/refill/{{ tile.refill_id }}/approve"
-                hx-swap="none">Approve</button>
+                onclick="event.stopPropagation(); window.__openApproveDialog('{{ tile.refill_id }}')">Approve</button>
     {% endif %}
   </td>
-  <td title="{{ tile.notes | default(value='') }}">
+  <td class="notes-cell"
+      title="{{ tile.notes | default(value='') }}"
+      data-tile-id="{{ tile.id }}"
+      data-item="{{ tile.item_number }}"
+      data-gts="{{ tile.gts_description | default(value='') | escape }}"
+      data-collection="{{ tile.collection | default(value='') | escape }}"
+      data-note="{{ tile.notes | default(value='') | escape }}"
+      onclick="event.stopPropagation(); window.__openNoteDialog(this)">
     {{ tile.notes | default(value="") | truncate(length=40) }}
   </td>
 </tr>
