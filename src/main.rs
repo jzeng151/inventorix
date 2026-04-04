@@ -12,8 +12,13 @@ async fn main() {
         )
         .init();
 
-    let port = std::env::var("PORT").unwrap_or_else(|_| "3000".to_string());
-    let addr = format!("127.0.0.1:{port}");
+    // BIND_ADDR overrides the full address; PORT overrides just the port.
+    // Default: 127.0.0.1 (loopback) for dev. Set BIND_ADDR=0.0.0.0:3000 to
+    // accept LAN connections from the mobile app.
+    let addr = std::env::var("BIND_ADDR").unwrap_or_else(|_| {
+        let port = std::env::var("PORT").unwrap_or_else(|_| "3000".to_string());
+        format!("127.0.0.1:{port}")
+    });
 
     // Bind before spawn so the port is guaranteed ready when anything navigates to it
     let listener = TcpListener::bind(&addr)

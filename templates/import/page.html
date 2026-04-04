@@ -27,6 +27,15 @@
       <a href="/" class="btn btn--ghost">Cancel</a>
     </div>
   </form>
+
+  <div id="tauri-import-section" style="display:none">
+    <div class="form-page__divider"></div>
+    <p class="detail-empty-sub">Or pick directly from the file system:</p>
+    <div class="import-actions">
+      <button type="button" id="tauri-browse-btn" class="btn btn--secondary">Browse for Excel File</button>
+      <span id="tauri-import-status" class="import-status-text"></span>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -43,5 +52,51 @@
       btn.disabled = true;
       btn.textContent = 'Importing…';
     });
+
+  // ── Tauri desktop: native file picker ──────────────────────────────────────
+  (function () {
+    if (!window.__TAURI__) return;
+
+    var section   = document.getElementById('tauri-import-section');
+    var browseBtn = document.getElementById('tauri-browse-btn');
+    var statusEl  = document.getElementById('tauri-import-status');
+
+    section.style.display = '';
+
+    browseBtn.addEventListener('click', async function () {
+      browseBtn.disabled = true;
+      statusEl.textContent = 'Opening file picker…';
+      try {
+        var path = await window.__TAURI__.core.invoke('pick_excel_file');
+        if (!path) {
+          statusEl.textContent = '';
+          browseBtn.disabled = false;
+          return;
+        }
+        var fileName = path.split(/[/\\]/).pop();
+        statusEl.textContent = 'Importing ' + fileName + '…';
+
+        var res = await fetch('/import/from-path', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: path }),
+        });
+
+        if (res.ok) {
+          var html = await res.text();
+          document.open();
+          document.write(html);
+          document.close();
+        } else {
+          var text = await res.text();
+          statusEl.textContent = 'Error: ' + (text || res.statusText);
+          browseBtn.disabled = false;
+        }
+      } catch (e) {
+        statusEl.textContent = 'Error: ' + e;
+        browseBtn.disabled = false;
+      }
+    });
+  })();
 </script>
 {% endblock %}

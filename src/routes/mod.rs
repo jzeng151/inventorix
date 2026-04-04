@@ -15,6 +15,7 @@ pub mod health;
 pub mod history;
 pub mod import;
 pub mod refill;
+pub mod scan;
 pub mod tiles;
 
 /// Assembles the full Axum router with session middleware and static file serving.
@@ -46,6 +47,7 @@ pub async fn build_router(state: AppState) -> Router {
         .merge(export::router())
         .merge(refill::router())
         .merge(admin::router())
+        .merge(scan::router())
         // Static assets (CSS, HTMX)
         .nest_service("/static", ServeDir::new("static"))
         .layer(session_layer)

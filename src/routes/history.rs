@@ -80,6 +80,22 @@ async fn history_page(
     .fetch_all(&state.db)
     .await?;
 
+    // ── Scan audit events ─────────────────────────────────────────────────────
+    let scan_rows = sqlx::query!(
+        r#"
+        SELECT sa.scanned_at, sa.scanned_by_name, sa.corrected,
+               sa.qty_before, sa.qty_after, t.item_number
+        FROM scan_audits sa
+        JOIN tiles t ON sa.tile_id = t.id
+        WHERE sa.branch_id = ?
+        ORDER BY sa.scanned_at DESC
+        LIMIT 500
+        "#,
+        auth.branch_id
+    )
+    .fetch_all(&state.db)
+    .await?;
+
     // ── Give-out events ───────────────────────────────────────────────────────
     let give_out_rows = sqlx::query!(
         r#"
@@ -193,6 +209,42 @@ async fn history_page(
             rejection_reason: None,
             pending_fulfillment: false,
         });
+    }
+
+    for r in &scan_rows {
+        let (time_str, date_str) = fmt_ts(&r.scanned_at);
+        if r.corrected == 1 {
+            let detail = format!(
+                "was: {} → corrected to {}",
+                r.qty_before.unwrap_or(0),
+                r.qty_after.unwrap_or(0)
+            );
+            entries.push(HistoryEntry {
+                ts: r.scanned_at.clone(),
+                date_str, time_str,
+                item_number: r.item_number.clone(),
+                action: "Inventory Corrected".into(),
+                action_slug: "scan-corrected".into(),
+                person: r.scanned_by_name.clone(),
+                qty: r.qty_after,
+                processing_time: Some(detail),
+                rejection_reason: None,
+                pending_fulfillment: false,
+            });
+        } else {
+            entries.push(HistoryEntry {
+                ts: r.scanned_at.clone(),
+                date_str, time_str,
+                item_number: r.item_number.clone(),
+                action: "Inventory Confirmed".into(),
+                action_slug: "scan-confirmed".into(),
+                person: r.scanned_by_name.clone(),
+                qty: r.qty_before,
+                processing_time: None,
+                rejection_reason: None,
+                pending_fulfillment: false,
+            });
+        }
     }
 
     // Newest first

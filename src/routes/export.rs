@@ -162,6 +162,7 @@ async fn export_handler(
             header::CONTENT_DISPOSITION,
             format!("attachment; filename=\"{xlsx_filename}\""),
         )
+        .header("X-Digest-Path", &digest_path)
         .body(Body::from(xlsx_bytes))
         .map_err(|e| AppError::Internal(format!("response build: {e}")))?;
 

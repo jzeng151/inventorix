@@ -12,8 +12,8 @@
   <div class="subbar__spacer"></div>
   <a href="/history" class="btn btn--secondary">History</a>
   <a href="/import" class="btn btn--secondary">Import</a>
-  <form method="post" action="/export" style="display:inline">
-    <button type="submit" class="btn btn--secondary">Export End-of-Day</button>
+  <form id="export-form" method="post" action="/export" style="display:inline">
+    <button type="submit" class="btn btn--secondary" id="export-btn">Export End-of-Day</button>
   </form>
 </div>
 {% endblock %}
@@ -557,6 +557,7 @@
     toastContainer.appendChild(toast);
     setTimeout(() => toast.remove(), 5000);
   }
+  window.showToast = showToast;
 
   // ── Copy item # to clipboard (row clicks) ────────────────────────────────
   function showCopiedTip(x, y) {
@@ -1031,6 +1032,58 @@
     if (e.clientX < rect.left || e.clientX > rect.right ||
         e.clientY < rect.top  || e.clientY > rect.bottom) {
       dlg.close();
+    }
+  });
+})();
+</script>
+
+<script>
+// ── Tauri export intercept ────────────────────────────────────────────────────
+// In the desktop app, intercept the export form submit, download the xlsx blob
+// via fetch(), and open the HTML digest with the OS default browser.
+(function () {
+  if (!window.__TAURI__) return;
+
+  var form = document.getElementById('export-form');
+  if (!form) return;
+
+  form.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    var btn = document.getElementById('export-btn');
+    btn.disabled = true;
+    btn.textContent = 'Exporting…';
+
+    try {
+      var res = await fetch('/export', { method: 'POST' });
+      if (!res.ok) {
+        window.showToast('Export failed.', 'error');
+        return;
+      }
+
+      // Trigger xlsx download via blob URL
+      var blob = await res.blob();
+      var disposition = res.headers.get('content-disposition') || '';
+      var match = disposition.match(/filename="([^"]+)"/);
+      var filename = match ? match[1] : 'inventory.xlsx';
+      var blobUrl = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(blobUrl);
+
+      // Open the HTML digest in the default browser
+      var digestPath = res.headers.get('X-Digest-Path');
+      if (digestPath) {
+        await window.__TAURI__.core.invoke('open_digest_in_browser', { path: digestPath });
+      }
+
+      window.showToast('Export complete — digest opened in browser.', 'success');
+    } catch (_) {
+      window.showToast('Export failed.', 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Export End-of-Day';
     }
   });
 })();

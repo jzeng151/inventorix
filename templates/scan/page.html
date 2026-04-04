@@ -1,0 +1,313 @@
+{% extends "base.html" %}
+
+{% block title %}Scan — Inventorix{% endblock %}
+
+{% block content %}
+<div class="scan-page">
+  <!-- ── State 1: Mode select ── -->
+  <div id="scan-mode-select">
+    <p class="scan-section-label">Choose a scanning mode:</p>
+    <button class="scan-mode-btn" id="btn-restock-mode">
+      <span class="scan-mode-btn__icon">✓</span> Confirm Restock
+      <div class="scan-mode-btn__sub">Scan a shelved item to confirm its approved restock</div>
+    </button>
+    <button class="scan-mode-btn" id="btn-integrity-mode">
+      <span class="scan-mode-btn__icon">🔍</span> Verify Inventory
+      <div class="scan-mode-btn__sub">Scan an item to confirm or correct its quantity</div>
+    </button>
+  </div>
+
+  <!-- ── State 2: Active scanning ── -->
+  <div id="scan-active" hidden>
+    <div class="scan-active-bar">
+      <span id="scan-mode-label">—</span>
+      <button class="btn btn--ghost" id="btn-exit-mode" style="color:#fff;border-color:rgba(255,255,255,0.4)">Exit Mode</button>
+    </div>
+    <button class="scan-trigger-btn" id="btn-scan">Tap to Scan QR Code</button>
+    <p class="scan-last" id="scan-last" hidden></p>
+    <div id="scan-status"></div>
+  </div>
+
+  <!-- ── State 3a: Restock confirm dialog ── -->
+  <div id="scan-restock-confirm" hidden>
+    <div class="scan-active-bar">
+      <span>Confirm Restock</span>
+      <button class="btn btn--ghost" id="btn-restock-cancel" style="color:#fff;border-color:rgba(255,255,255,0.4)">Cancel</button>
+    </div>
+    <div class="scan-result-box scan-result-box--info" id="restock-info-box">
+      <div class="scan-item-number" id="restock-item-number"></div>
+      <div class="scan-field-row">
+        <span class="scan-field-label">Current qty:</span>
+        <span id="restock-current-qty"></span>
+      </div>
+      <div class="scan-field-row">
+        <span class="scan-field-label">Approved restock qty:</span>
+        <span id="restock-approved-qty"></span>
+      </div>
+    </div>
+    <button class="scan-trigger-btn" id="btn-restock-confirm" style="background:var(--color-healthy-fg)">
+      Confirm Restocked
+    </button>
+    <p id="restock-error" class="scan-error" hidden></p>
+  </div>
+
+  <!-- ── State 3b: Integrity check dialog ── -->
+  <div id="scan-integrity-check" hidden>
+    <div class="scan-active-bar">
+      <span>Verify Inventory</span>
+      <button class="btn btn--ghost" id="btn-integrity-cancel" style="color:#fff;border-color:rgba(255,255,255,0.4)">Cancel</button>
+    </div>
+    <div class="scan-result-box scan-result-box--info">
+      <div class="scan-item-number" id="integrity-item-number"></div>
+      <div class="scan-field-row">
+        <span class="scan-field-label">DB has:</span>
+        <span id="integrity-db-qty" style="font-weight:600"></span>
+      </div>
+    </div>
+    <p class="scan-section-label" style="margin-top:var(--space-4)">Actual qty on shelf:</p>
+    <div style="display:flex;align-items:center;gap:var(--space-4);margin-bottom:var(--space-4)">
+      <input type="number" id="integrity-qty-input" class="form-input scan-qty-input"
+             min="0" max="99999" inputmode="numeric">
+    </div>
+    <button class="scan-trigger-btn" id="btn-integrity-submit">Confirm</button>
+    <p id="integrity-error" class="scan-error" hidden></p>
+  </div>
+
+  <!-- ── State 4: Result ── -->
+  <div id="scan-result" hidden>
+    <div class="scan-result-box" id="scan-result-box">
+      <p id="scan-result-msg" style="font-weight:600;margin:0"></p>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var mode = sessionStorage.getItem('scanMode') || null; // 'restock' | 'integrity'
+  var pendingTile = null; // TileQrInfo from /tiles/by-qr/{item}
+
+  // ── DOM refs ───────────────────────────────────────────────────────────────
+  var elModeSelect        = document.getElementById('scan-mode-select');
+  var elActive            = document.getElementById('scan-active');
+  var elModeLabel         = document.getElementById('scan-mode-label');
+  var elRestockConfirm    = document.getElementById('scan-restock-confirm');
+  var elIntegrityCheck    = document.getElementById('scan-integrity-check');
+  var elResult            = document.getElementById('scan-result');
+  var elResultBox         = document.getElementById('scan-result-box');
+  var elResultMsg         = document.getElementById('scan-result-msg');
+  var elScanLast          = document.getElementById('scan-last');
+  var elScanStatus        = document.getElementById('scan-status');
+  var integrityQtyInput   = document.getElementById('integrity-qty-input');
+
+  // ── State helpers ──────────────────────────────────────────────────────────
+  function showOnly(el) {
+    [elModeSelect, elActive, elRestockConfirm, elIntegrityCheck, elResult]
+      .forEach(function (e) { e.hidden = (e !== el); });
+  }
+
+  function enterMode(m) {
+    mode = m;
+    sessionStorage.setItem('scanMode', m);
+    elModeLabel.textContent = m === 'restock' ? 'Mode: Confirm Restock' : 'Mode: Verify Inventory';
+    elScanLast.hidden = true;
+    showOnly(elActive);
+  }
+
+  function exitMode() {
+    mode = null;
+    sessionStorage.removeItem('scanMode');
+    pendingTile = null;
+    showOnly(elModeSelect);
+  }
+
+  function showResult(ok, msg) {
+    elResultBox.className = 'scan-result-box ' + (ok ? 'scan-result-box--ok' : 'scan-result-box--error');
+    elResultMsg.textContent = msg;
+    showOnly(elResult);
+    setTimeout(function () {
+      if (mode) { showOnly(elActive); } else { showOnly(elModeSelect); }
+    }, 2500);
+  }
+
+  // ── Mode buttons ───────────────────────────────────────────────────────────
+  document.getElementById('btn-restock-mode').addEventListener('click', function () { enterMode('restock'); });
+  document.getElementById('btn-integrity-mode').addEventListener('click', function () { enterMode('integrity'); });
+  document.getElementById('btn-exit-mode').addEventListener('click', exitMode);
+  document.getElementById('btn-restock-cancel').addEventListener('click', function () { showOnly(elActive); });
+  document.getElementById('btn-integrity-cancel').addEventListener('click', function () { showOnly(elActive); });
+
+  // Resume saved mode on page load
+  if (mode) { enterMode(mode); }
+
+  // ── QR scanner ────────────────────────────────────────────────────────────
+  // On Android the barcode-scanner plugin handles the camera directly via IPC.
+  // On desktop/dev the fallback text prompt is used for testing.
+  async function scanQR() {
+    if (window.__TAURI__) {
+      try {
+        var result = await window.__TAURI__.core.invoke(
+          'plugin:barcode-scanner|scan',
+          { options: { formats: ['QrCode'] } }
+        );
+        return result ? result.content : null;
+      } catch (e) {
+        return null;
+      }
+    }
+    // Dev fallback: text prompt
+    return prompt('Dev mode — enter item number:') || null;
+  }
+
+  // ── Scan button ───────────────────────────────────────────────────────────
+  document.getElementById('btn-scan').addEventListener('click', async function () {
+    var btn = this;
+    btn.disabled = true;
+    btn.textContent = 'Scanning…';
+    elScanStatus.textContent = '';
+
+    var itemNumber = await scanQR();
+    btn.disabled = false;
+    btn.textContent = 'Tap to Scan QR Code';
+
+    if (!itemNumber) { elScanStatus.textContent = 'Scan cancelled.'; return; }
+
+    itemNumber = itemNumber.trim().toUpperCase();
+
+    // Fetch tile info
+    var res;
+    try {
+      res = await fetch('/tiles/by-qr/' + encodeURIComponent(itemNumber));
+    } catch (_) {
+      elScanStatus.textContent = 'Network error.';
+      return;
+    }
+
+    if (res.status === 404) {
+      elScanStatus.textContent = 'Item "' + itemNumber + '" not found in your branch.';
+      return;
+    }
+    if (!res.ok) {
+      elScanStatus.textContent = 'Error loading item.';
+      return;
+    }
+
+    pendingTile = await res.json();
+    elScanLast.hidden = false;
+    elScanLast.textContent = 'Last scanned: ' + pendingTile.item_number;
+
+    if (mode === 'restock') {
+      openRestockConfirm();
+    } else {
+      openIntegrityCheck();
+    }
+  });
+
+  // ── Restock confirm ───────────────────────────────────────────────────────
+  function openRestockConfirm() {
+    var t = pendingTile;
+    document.getElementById('restock-item-number').textContent = t.item_number;
+    document.getElementById('restock-current-qty').textContent = t.qty;
+    var approved = (t.refill_status === 'approved' && t.refill_qty != null)
+      ? t.refill_qty + ' units'
+      : '—';
+    document.getElementById('restock-approved-qty').textContent = approved;
+    document.getElementById('restock-error').hidden = true;
+
+    if (t.refill_status !== 'approved') {
+      document.getElementById('restock-error').textContent = 'No approved restock pending for this item.';
+      document.getElementById('restock-error').hidden = false;
+    }
+    showOnly(elRestockConfirm);
+  }
+
+  document.getElementById('btn-restock-confirm').addEventListener('click', async function () {
+    var btn = this;
+    btn.disabled = true;
+    var errEl = document.getElementById('restock-error');
+    errEl.hidden = true;
+
+    var body = 'item_number=' + encodeURIComponent(pendingTile.item_number);
+    var res;
+    try {
+      res = await fetch('/scan/restock-confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body,
+      });
+    } catch (_) {
+      errEl.textContent = 'Network error.';
+      errEl.hidden = false;
+      btn.disabled = false;
+      return;
+    }
+
+    if (res.ok) {
+      var data = await res.json();
+      showResult(true, '✓ ' + data.item_number + ' restocked — new qty: ' + data.new_qty);
+    } else {
+      var msg = await res.text().catch(function () { return 'Request failed.'; });
+      errEl.textContent = msg || 'Request failed.';
+      errEl.hidden = false;
+    }
+    btn.disabled = false;
+  });
+
+  // ── Integrity check ───────────────────────────────────────────────────────
+  function openIntegrityCheck() {
+    var t = pendingTile;
+    document.getElementById('integrity-item-number').textContent = t.item_number;
+    document.getElementById('integrity-db-qty').textContent = t.qty;
+    integrityQtyInput.value = t.qty;
+    document.getElementById('integrity-error').hidden = true;
+    showOnly(elIntegrityCheck);
+    integrityQtyInput.focus();
+    integrityQtyInput.select();
+  }
+
+  document.getElementById('btn-integrity-submit').addEventListener('click', async function () {
+    var btn = this;
+    var errEl = document.getElementById('integrity-error');
+    var qty = parseInt(integrityQtyInput.value, 10);
+    if (isNaN(qty) || qty < 0 || qty > 99999) {
+      errEl.textContent = 'Please enter a valid quantity (0–99,999).';
+      errEl.hidden = false;
+      return;
+    }
+    btn.disabled = true;
+    errEl.hidden = true;
+
+    var body = 'item_number=' + encodeURIComponent(pendingTile.item_number) + '&qty=' + qty;
+    var res;
+    try {
+      res = await fetch('/scan/integrity-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body,
+      });
+    } catch (_) {
+      errEl.textContent = 'Network error.';
+      errEl.hidden = false;
+      btn.disabled = false;
+      return;
+    }
+
+    if (res.ok) {
+      var data = await res.json();
+      var msg = data.corrected
+        ? '✓ Corrected ' + pendingTile.item_number + ': ' + data.old_qty + ' → ' + data.new_qty
+        : '✓ ' + pendingTile.item_number + ' confirmed at ' + data.new_qty;
+      showResult(true, msg);
+    } else {
+      var errMsg = await res.text().catch(function () { return 'Request failed.'; });
+      errEl.textContent = errMsg || 'Request failed.';
+      errEl.hidden = false;
+    }
+    btn.disabled = false;
+  });
+
+  integrityQtyInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') document.getElementById('btn-integrity-submit').click();
+  });
+})();
+</script>
+{% endblock %}

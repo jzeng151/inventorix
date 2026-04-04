@@ -1,8 +1,8 @@
 use axum::{
     extract::{Multipart, State},
-    response::IntoResponse,
+    response::{Html, IntoResponse},
     routing::{get, post},
-    Router,
+    Json, Router,
 };
 use calamine::{open_workbook_from_rs, Reader, Xlsx};
 use std::io::Cursor;
@@ -17,6 +17,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/import", get(import_page))
         .route("/import", post(import_upload))
+        .route("/import/from-path", post(import_from_path))
 }
 
 // ── GET /import ───────────────────────────────────────────────────────────────
@@ -60,6 +61,60 @@ async fn import_upload(
     result
 }
 
+// ── POST /import/from-path ────────────────────────────────────────────────────
+// Tauri desktop: read the xlsx from a local path chosen via the native file picker.
+
+#[derive(serde::Deserialize)]
+struct FromPathRequest {
+    path: String,
+}
+
+async fn import_from_path(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Json(body): Json<FromPathRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    if auth.role == Role::SalesRep {
+        return Err(AppError::Forbidden);
+    }
+
+    if !body.path.to_lowercase().ends_with(".xlsx") {
+        return Err(AppError::ValidationError(
+            "File must be a .xlsx file".into(),
+        ));
+    }
+
+    // Acquire import lock
+    {
+        let mut lock = state.import_lock.lock().await;
+        if *lock {
+            return Err(AppError::Conflict("Import already in progress".into()));
+        }
+        *lock = true;
+    }
+
+    let result = do_import_from_path(&state, auth, &body.path).await;
+    *state.import_lock.lock().await = false;
+    result
+}
+
+async fn do_import_from_path(
+    state: &AppState,
+    auth: AuthUser,
+    path: &str,
+) -> Result<Html<String>, AppError> {
+    let bytes = tokio::fs::read(path)
+        .await
+        .map_err(|e| AppError::ValidationError(format!("Cannot read file: {e}")))?;
+
+    let file_name = std::path::Path::new(path)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "upload.xlsx".into());
+
+    process_excel_bytes(state, auth, bytes, &file_name).await
+}
+
 // ── Import logic ──────────────────────────────────────────────────────────────
 
 #[derive(serde::Serialize)]
@@ -73,7 +128,7 @@ async fn run_import(
     state: &AppState,
     auth: AuthUser,
     mut multipart: Multipart,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<Html<String>, AppError> {
     let mut file_bytes: Option<Vec<u8>> = None;
     let mut file_name = String::new();
 
@@ -98,6 +153,15 @@ async fn run_import(
     let bytes = file_bytes
         .ok_or_else(|| AppError::ValidationError("No file uploaded".into()))?;
 
+    process_excel_bytes(state, auth, bytes, &file_name).await
+}
+
+async fn process_excel_bytes(
+    state: &AppState,
+    auth: AuthUser,
+    bytes: Vec<u8>,
+    file_name: &str,
+) -> Result<Html<String>, AppError> {
     if file_name.to_lowercase().ends_with(".xls")
         && !file_name.to_lowercase().ends_with(".xlsx")
     {

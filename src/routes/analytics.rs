@@ -155,6 +155,24 @@ async fn analytics_page(
     let total_qty_restocked = restock_agg.total_qty_restocked;
     let avg_restock_amt     = (restock_agg.avg_restock_amt * 10.0).round() / 10.0; // 1 decimal
 
+    // ── Scan audit counts ─────────────────────────────────────────────────────
+    let scan_agg = sqlx::query!(
+        r#"
+        SELECT
+            COUNT(*) AS "total_scans!: i64",
+            SUM(CASE WHEN sa.corrected = 1 THEN 1 ELSE 0 END) AS "total_corrections!: i64"
+        FROM scan_audits sa
+        JOIN tiles t ON sa.tile_id = t.id
+        WHERE t.branch_id = ? AND date(sa.scanned_at) BETWEEN ? AND ?
+        "#,
+        auth.branch_id, date_from, date_to
+    )
+    .fetch_one(&state.db)
+    .await?;
+
+    let total_scans       = scan_agg.total_scans;
+    let total_corrections = scan_agg.total_corrections;
+
     // ── Rejection count ───────────────────────────────────────────────────────
     let total_rejections = sqlx::query!(
         r#"
@@ -189,6 +207,8 @@ async fn analytics_page(
     ctx.insert("avg_restock_amt", &avg_restock_amt);
     ctx.insert("total_rejections", &total_rejections);
     ctx.insert("pending_restocks_count", &pending_restocks_count);
+    ctx.insert("total_scans", &total_scans);
+    ctx.insert("total_corrections", &total_corrections);
     ctx.insert("date_from", &date_from);
     ctx.insert("date_to", &date_to);
     ctx.insert("auth_user_name", &auth.name);

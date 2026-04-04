@@ -21,13 +21,14 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "capabilities": ["mobile", "desktop"]
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["msi"],
-    "icon": [],
+    "targets": ["msi", "app"],
+    "icon": ["icons/icon.icns", "icons/icon.ico", "icons/icon.png"],
     "windows": {
       "wix": {}
     }

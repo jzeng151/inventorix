@@ -56,6 +56,14 @@
     <div class="analytics-card__label">Pending Fulfillment</div>
     <div class="analytics-card__value">{{ pending_restocks_count }}</div>
   </div>
+  <div class="analytics-card">
+    <div class="analytics-card__label">Inventory Scans</div>
+    <div class="analytics-card__value">{{ total_scans }}</div>
+  </div>
+  <div class="analytics-card {% if total_corrections > 0 %}analytics-card--rejected{% endif %}">
+    <div class="analytics-card__label">Corrections Made</div>
+    <div class="analytics-card__value">{{ total_corrections }}</div>
+  </div>
   <button class="analytics-card analytics-card--flagged analytics-card--clickable"
           id="flagged-card" aria-haspopup="dialog" aria-label="View flagged tiles">
     <div class="analytics-card__label">Flagged Tiles ↗</div>

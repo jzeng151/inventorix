@@ -1,0 +1,10 @@
+{
+  "identifier": "desktop",
+  "description": "Desktop-only capabilities: native file picker and OS opener",
+  "platforms": ["windows", "macOS", "linux"],
+  "permissions": [
+    "dialog:allow-open",
+    "opener:allow-open-path",
+    "opener:allow-open-url"
+  ]
+}

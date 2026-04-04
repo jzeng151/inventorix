@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Inventorix{% endblock %}</title>
-  <link rel="stylesheet" href="/static/css/app.css?v=8">
+  <link rel="stylesheet" href="/static/css/app.css?v=9">
   <script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js" defer></script>
   <!-- TODO: bundle htmx.min.js locally under static/js/ before production -->
 </head>
@@ -17,6 +17,7 @@
     <div class="topbar__spacer"></div>
     <span class="topbar__user">{{ auth_user_name | default(value="") }}</span>
     {% if auth_user_role == "admin" or auth_user_role == "coordinator" %}
+    <a href="/scan" class="btn btn--ghost">Scan</a>
     <div class="notif-wrapper" id="notif-wrapper">
       <button class="notif-btn" id="notif-btn" aria-label="Notifications" aria-expanded="false" aria-haspopup="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -36,6 +37,7 @@
     {% endif %}
     {% if auth_user_role == "admin" %}
     <a href="/analytics" class="btn btn--ghost">Analytics</a>
+    <a href="/scan/print-qr" class="btn btn--ghost">Print QR</a>
     <a href="/admin" class="btn btn--ghost">Admin</a>
     {% endif %}
     <form action="/auth/logout" method="post" style="display:inline">

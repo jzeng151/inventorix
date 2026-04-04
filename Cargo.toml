@@ -49,7 +49,8 @@ calamine = { version = "0.26", features = ["dates"] }
 rust_xlsxwriter = "0.79"
 
 # HTTP client (Salesforce outbound)
-reqwest = { version = "0.12", features = ["json"] }
+# rustls-tls instead of native-tls/openssl — required for Android cross-compilation
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 
 # Real-time / WebSocket
 dashmap = "6"
@@ -71,6 +72,9 @@ chrono = { version = "0.4", features = ["serde"] }
 dotenvy = "0.15"
 rand = "0.8"
 async-trait = "0.1"
+
+# QR code generation
+qrcode = "0.14"
 
 [dev-dependencies]
 axum-test = "19"
